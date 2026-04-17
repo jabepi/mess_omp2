@@ -44,7 +44,7 @@
 # include <stdint.h>
 # include <omp.h>
 
-#define DEBUG_LOG_PATH "/gpfs/projects/bsc18/bsc752338/GEM5/GEM5_mess_bsc_ARM/runs/OMP_tests/STREAM/mess_code_versions/gemini/.cursor/debug-2ac992.log"
+#define DEBUG_LOG_PATH "/home/gem5/mess_omp2/debug-2ac992.log"
 #define DEBUG_SESSION_ID "2ac992"
 
 static long long debug_now_ms(void)
