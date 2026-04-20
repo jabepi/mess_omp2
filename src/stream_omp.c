@@ -531,8 +531,37 @@ int main(int argc, char *argv[])
                        "{\"note\":\"before parallel region\"}");
         // #endregion
     }
-    // Trigger Python to switch from ATOMIC CPU to O3 CPU precisely before the ROI
-    m5_exit(0);
+    {
+        int skip_pre_roi_exit = 0;
+        const char *skip_pre_roi_exit_env = getenv("MESS_SKIP_PRE_M5_EXIT");
+        if (skip_pre_roi_exit_env != NULL && atoi(skip_pre_roi_exit_env) != 0)
+            skip_pre_roi_exit = 1;
+        {
+            char data_json[96];
+            snprintf(data_json, sizeof(data_json),
+                     "{\"skipPreM5Exit\":%d}", skip_pre_roi_exit);
+            // #region agent log
+            debug_log_json("pre-fix", "H8", "stream_omp.c:main:pre-m5-exit",
+                           "About to execute pre-ROI m5_exit", data_json);
+            // #endregion
+        }
+        if (!skip_pre_roi_exit)
+        {
+            // Trigger Python to switch from ATOMIC CPU to O3 CPU precisely before the ROI
+            m5_exit(0);
+            // #region agent log
+            debug_log_json("pre-fix", "H8", "stream_omp.c:main:post-m5-exit",
+                           "Returned from pre-ROI m5_exit", "{\"returned\":1}");
+            // #endregion
+        }
+        else
+        {
+            // #region agent log
+            debug_log_json("pre-fix", "H8", "stream_omp.c:main:post-m5-exit",
+                           "Skipped pre-ROI m5_exit by env", "{\"returned\":0}");
+            // #endregion
+        }
+    }
 
 #ifdef _OPENMP
         #pragma omp parallel
