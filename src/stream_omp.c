@@ -45,7 +45,6 @@
 # include <omp.h>
 
 #define DEBUG_LOG_PATH "/home/gem5/mess_omp2/debug-2ac992.log"
-#define DEBUG_LOG_PATH_FALLBACK1 "debug-2ac992.log"
 #define DEBUG_SESSION_ID "2ac992"
 
 static long long debug_now_ms(void)
@@ -61,25 +60,20 @@ static void debug_log_json(const char *run_id,
                            const char *message,
                            const char *data_json)
 {
-    static const char *paths[] = { DEBUG_LOG_PATH, DEBUG_LOG_PATH_FALLBACK1 };
-    int p = 0;
-    for (p = 0; p < 2; p++)
-    {
-        FILE *fp = fopen(paths[p], "a");
-        if (fp == NULL)
-            continue;
-        fprintf(fp,
-                "{\"sessionId\":\"%s\",\"runId\":\"%s\",\"hypothesisId\":\"%s\","
-                "\"location\":\"%s\",\"message\":\"%s\",\"data\":%s,\"timestamp\":%lld}\n",
-                DEBUG_SESSION_ID,
-                run_id,
-                hypothesis_id,
-                location,
-                message,
-                data_json,
-                debug_now_ms());
-        fclose(fp);
-    }
+    FILE *fp = fopen(DEBUG_LOG_PATH, "a");
+    if (fp == NULL)
+        return;
+    fprintf(fp,
+            "{\"sessionId\":\"%s\",\"runId\":\"%s\",\"hypothesisId\":\"%s\","
+            "\"location\":\"%s\",\"message\":\"%s\",\"data\":%s,\"timestamp\":%lld}\n",
+            DEBUG_SESSION_ID,
+            run_id,
+            hypothesis_id,
+            location,
+            message,
+            data_json,
+            debug_now_ms());
+    fclose(fp);
 }
 
 void m5_dump_reset_stats(uint64_t delay, uint64_t period) {
@@ -537,6 +531,8 @@ int main(int argc, char *argv[])
                        "{\"note\":\"before parallel region\"}");
         // #endregion
     }
+    // Trigger Python to switch from ATOMIC CPU to O3 CPU precisely before the ROI
+    m5_exit(0);
 
 #ifdef _OPENMP
         #pragma omp parallel
@@ -604,6 +600,13 @@ int main(int argc, char *argv[])
         {
             if (local_elements > 0)
             {
+                if (iter == 0 && thread_id == 0)
+                {
+                    // #region agent log
+                    debug_log_json("pre-fix", "H7", "stream_omp.c:parallel:before-kernel",
+                                   "About to call STREAM_copy_rw", "{\"threadId\":0,\"iter\":0}");
+                    // #endregion
+                }
                 long long t_start = debug_now_ms();
                 STREAM_copy_rw(a + local_start, b + local_start, &local_elements, &pause);
                 if (iter == 0 && thread_id < 2)
@@ -641,6 +644,8 @@ int main(int argc, char *argv[])
                            "Reached ROI end before dump_stats", data_json);
             // #endregion
             m5_dump_stats(0, 0);
+            // End the simulation immediately after the timed region completes.
+            m5_exit(0);
         }
     }
 
