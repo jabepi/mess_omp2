@@ -60,10 +60,7 @@ static void debug_log_json(const char *run_id,
                            const char *message,
                            const char *data_json)
 {
-    FILE *fp = fopen(DEBUG_LOG_PATH, "a");
-    if (fp == NULL)
-        return;
-    fprintf(fp,
+    fprintf(stdout,
             "{\"sessionId\":\"%s\",\"runId\":\"%s\",\"hypothesisId\":\"%s\","
             "\"location\":\"%s\",\"message\":\"%s\",\"data\":%s,\"timestamp\":%lld}\n",
             DEBUG_SESSION_ID,
@@ -73,7 +70,7 @@ static void debug_log_json(const char *run_id,
             message,
             data_json,
             debug_now_ms());
-    fclose(fp);
+    fflush(stdout);
 }
 
 void m5_dump_reset_stats(uint64_t delay, uint64_t period) {
