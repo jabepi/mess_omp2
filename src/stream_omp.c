@@ -194,7 +194,7 @@ void m5_dump_stats(uint64_t delay, uint64_t period) {
 double * __restrict a, * __restrict b;
 ssize_t array_elements, array_bytes, array_alignment;
 
-const char *usage = "[-r <read_ratio>] [-p <pause>] [-s <array_size>]\n";
+const char *usage = "[-r <read_ratio>] [-p <pause>] [-s <array_size>] [-i] [-e]\n";
 
 void (*STREAM_copy_rw)(double *a_array, double *b_array,
                          ssize_t *array_size, const int* const pause) = NULL;
@@ -206,9 +206,11 @@ int main(int argc, char *argv[])
     int BytesPerWord, k, rd_percentage = 50, opt;
     ssize_t j;
     int pause = 0;
+    int cli_skip_init = 0;
+    int cli_skip_pre_m5_exit = 0;
 
     // Command line parsing
-    while (( opt = getopt(argc, argv, ":r:p:s:")) != -1)
+    while (( opt = getopt(argc, argv, ":r:p:s:ie")) != -1)
     {
         switch(opt)
         {
@@ -228,9 +230,15 @@ int main(int argc, char *argv[])
                     exit(-1);
                 }
                 break;
-	    case 's': 
-		STREAM_ARRAY_SIZE = atoll(optarg);
-		break;
+            case 's':
+                STREAM_ARRAY_SIZE = atoll(optarg);
+                break;
+            case 'i':
+                cli_skip_init = 1;
+                break;
+            case 'e':
+                cli_skip_pre_m5_exit = 1;
+                break;
 	    default:
                 print_usage(argv, (char *)usage);
                 exit(-1);
@@ -244,15 +252,22 @@ int main(int argc, char *argv[])
         exit(-1);
     }
     {
+        const char *skip_init_env = getenv("MESS_SKIP_INIT");
+        const char *skip_pre_roi_exit_env = getenv("MESS_SKIP_PRE_M5_EXIT");
         char data_json[256];
         snprintf(data_json, sizeof(data_json),
                  "{\"streamArraySize\":%lld,\"rdPercentage\":%d,\"pause\":%d,"
-                 "\"optind\":%d,\"argc\":%d}",
+                 "\"optind\":%d,\"argc\":%d,\"cliSkipInit\":%d,\"cliSkipPreM5Exit\":%d,"
+                 "\"envSkipInitSet\":%d,\"envSkipPreM5ExitSet\":%d}",
                  STREAM_ARRAY_SIZE,
                  rd_percentage,
                  pause,
                  optind,
-                 argc);
+                 argc,
+                 cli_skip_init,
+                 cli_skip_pre_m5_exit,
+                 (skip_init_env != NULL),
+                 (skip_pre_roi_exit_env != NULL));
         // #region agent log
         debug_log_json("pre-fix", "H1", "stream_omp.c:main:post-parse",
                        "Parsed CLI arguments", data_json);
@@ -512,6 +527,8 @@ int main(int argc, char *argv[])
     {
         int skip_init = 0;
         const char *skip_init_env = getenv("MESS_SKIP_INIT");
+        if (cli_skip_init)
+            skip_init = 1;
         if (skip_init_env != NULL && atoi(skip_init_env) != 0)
             skip_init = 1;
         {
@@ -555,6 +572,8 @@ int main(int argc, char *argv[])
     {
         int skip_pre_roi_exit = 0;
         const char *skip_pre_roi_exit_env = getenv("MESS_SKIP_PRE_M5_EXIT");
+        if (cli_skip_pre_m5_exit)
+            skip_pre_roi_exit = 1;
         if (skip_pre_roi_exit_env != NULL && atoi(skip_pre_roi_exit_env) != 0)
             skip_pre_roi_exit = 1;
         {
