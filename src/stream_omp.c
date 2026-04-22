@@ -509,14 +509,38 @@ int main(int argc, char *argv[])
     }
 
     /* --- SETUP --- initialize arrays --- */
-
-#ifdef _OPENMP
-    #pragma omp parallel for
-#endif
-    for (j=0; j<array_elements; j++)
     {
-        a[j] = 1.0;
-        b[j] = 2.0;
+        int skip_init = 0;
+        const char *skip_init_env = getenv("MESS_SKIP_INIT");
+        if (skip_init_env != NULL && atoi(skip_init_env) != 0)
+            skip_init = 1;
+        {
+            char data_json[128];
+            snprintf(data_json, sizeof(data_json),
+                     "{\"skipInit\":%d,\"arrayElements\":%lld}",
+                     skip_init, (long long)array_elements);
+            // #region agent log
+            debug_log_json("pre-fix", "H9", "stream_omp.c:setup:init-start",
+                           "About to initialize arrays", data_json);
+            // #endregion
+        }
+        if (!skip_init)
+        {
+#ifdef _OPENMP
+            #pragma omp parallel for
+#endif
+            for (j=0; j<array_elements; j++)
+            {
+                a[j] = 1.0;
+                b[j] = 2.0;
+            }
+        }
+        {
+            // #region agent log
+            debug_log_json("pre-fix", "H9", "stream_omp.c:setup:init-end",
+                           "Finished array initialization", "{\"ok\":1}");
+            // #endregion
+        }
     }
 
     /*	--- MAIN LOOP --- repeat the kernel like STREAM --- */
