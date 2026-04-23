@@ -194,7 +194,7 @@ void m5_dump_stats(uint64_t delay, uint64_t period) {
 double * __restrict a, * __restrict b;
 ssize_t array_elements, array_bytes, array_alignment;
 
-const char *usage = "[-r <read_ratio>] [-p <pause>] [-s <array_size>] [-i] [-e] [-I] [-E]\n";
+const char *usage = "[-r <read_ratio>] [-p <pause>] [-s <array_size>] [-n <iterations>] [-i] [-e] [-I] [-E]\n";
 
 void (*STREAM_copy_rw)(double *a_array, double *b_array,
                          ssize_t *array_size, const int* const pause) = NULL;
@@ -206,13 +206,14 @@ int main(int argc, char *argv[])
     int BytesPerWord, k, rd_percentage = 50, opt;
     ssize_t j;
     int pause = 0;
+    int run_iterations = NTIMES;
     int cli_skip_init = 0;
     int cli_skip_pre_m5_exit = 0;
     int cli_force_init = 0;
     int cli_force_pre_m5_exit = 0;
 
     // Command line parsing
-    while (( opt = getopt(argc, argv, ":r:p:s:IEie")) != -1)
+    while (( opt = getopt(argc, argv, ":r:p:s:n:IEie")) != -1)
     {
         switch(opt)
         {
@@ -234,6 +235,14 @@ int main(int argc, char *argv[])
                 break;
             case 's':
                 STREAM_ARRAY_SIZE = atoll(optarg);
+                break;
+            case 'n':
+                run_iterations = atoi(optarg);
+                if (run_iterations <= 0)
+                {
+                    printf("ERROR: Iterations must be a positive integer.\n");
+                    exit(-1);
+                }
                 break;
             case 'I':
                 cli_force_init = 1;
@@ -264,7 +273,7 @@ int main(int argc, char *argv[])
         snprintf(data_json, sizeof(data_json),
                  "{\"streamArraySize\":%lld,\"rdPercentage\":%d,\"pause\":%d,"
                  "\"optind\":%d,\"argc\":%d,\"cliSkipInit\":%d,\"cliSkipPreM5Exit\":%d,"
-                 "\"cliForceInit\":%d,\"cliForcePreM5Exit\":%d}",
+                 "\"cliForceInit\":%d,\"cliForcePreM5Exit\":%d,\"runIterations\":%d}",
                  STREAM_ARRAY_SIZE,
                  rd_percentage,
                  pause,
@@ -273,7 +282,8 @@ int main(int argc, char *argv[])
                  cli_skip_init,
                  cli_skip_pre_m5_exit,
                  cli_force_init,
-                 cli_force_pre_m5_exit);
+                 cli_force_pre_m5_exit,
+                 run_iterations);
         // #region agent log
         debug_log_json("pre-fix", "H1", "stream_omp.c:main:post-parse",
                        "Parsed CLI arguments", data_json);
@@ -505,7 +515,7 @@ int main(int argc, char *argv[])
           (2.0 * BytesPerWord) * ( (double) STREAM_ARRAY_SIZE / 1024.0/1024./1024.));
 
         printf(HLINE);
-        printf("The kernel will be executed %d times.\n", NTIMES);
+        printf("The kernel will be executed %d times.\n", run_iterations);
 
         #ifdef _OPENMP
             printf(HLINE);
@@ -705,8 +715,18 @@ int main(int argc, char *argv[])
         #pragma omp barrier
 #endif
 
-        for (iter = 0; iter < NTIMES; iter++)
+        for (iter = 0; iter < run_iterations; iter++)
         {
+            if (thread_id == 0)
+            {
+                char data_json[96];
+                snprintf(data_json, sizeof(data_json),
+                         "{\"iter\":%d,\"runIterations\":%d}", iter, run_iterations);
+                // #region agent log
+                debug_log_json("pre-fix", "H11", "stream_omp.c:parallel:iter-start",
+                               "Starting kernel iteration", data_json);
+                // #endregion
+            }
             if (local_elements > 0)
             {
                 if (iter == 0 && thread_id == 0)
@@ -736,6 +756,16 @@ int main(int argc, char *argv[])
                     // #endregion
                 }
             }
+            if (thread_id == 0)
+            {
+                char data_json[96];
+                snprintf(data_json, sizeof(data_json),
+                         "{\"iter\":%d,\"runIterations\":%d}", iter, run_iterations);
+                // #region agent log
+                debug_log_json("pre-fix", "H11", "stream_omp.c:parallel:iter-end",
+                               "Finished kernel iteration", data_json);
+                // #endregion
+            }
         }
 
 #ifdef _OPENMP
@@ -746,7 +776,7 @@ int main(int argc, char *argv[])
             char data_json[160];
             snprintf(data_json, sizeof(data_json),
                      "{\"ntimes\":%d,\"arrayElements\":%lld}",
-                     NTIMES,
+                     run_iterations,
                      (long long)array_elements);
             // #region agent log
             debug_log_json("pre-fix", "H5", "stream_omp.c:parallel:roi-end",
