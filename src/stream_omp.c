@@ -194,7 +194,7 @@ void m5_dump_stats(uint64_t delay, uint64_t period) {
 double * __restrict a, * __restrict b;
 ssize_t array_elements, array_bytes, array_alignment;
 
-const char *usage = "[-r <read_ratio>] [-p <pause>] [-s <array_size>] [-I] [-E]\n";
+const char *usage = "[-r <read_ratio>] [-p <pause>] [-s <array_size>] [-i] [-e] [-I] [-E]\n";
 
 void (*STREAM_copy_rw)(double *a_array, double *b_array,
                          ssize_t *array_size, const int* const pause) = NULL;
@@ -206,11 +206,13 @@ int main(int argc, char *argv[])
     int BytesPerWord, k, rd_percentage = 50, opt;
     ssize_t j;
     int pause = 0;
+    int cli_skip_init = 0;
+    int cli_skip_pre_m5_exit = 0;
     int cli_force_init = 0;
     int cli_force_pre_m5_exit = 0;
 
     // Command line parsing
-    while (( opt = getopt(argc, argv, ":r:p:s:IE")) != -1)
+    while (( opt = getopt(argc, argv, ":r:p:s:IEie")) != -1)
     {
         switch(opt)
         {
@@ -236,8 +238,14 @@ int main(int argc, char *argv[])
             case 'I':
                 cli_force_init = 1;
                 break;
+            case 'i':
+                cli_skip_init = 1;
+                break;
             case 'E':
                 cli_force_pre_m5_exit = 1;
+                break;
+            case 'e':
+                cli_skip_pre_m5_exit = 1;
                 break;
 	    default:
                 print_usage(argv, (char *)usage);
@@ -255,12 +263,15 @@ int main(int argc, char *argv[])
         char data_json[256];
         snprintf(data_json, sizeof(data_json),
                  "{\"streamArraySize\":%lld,\"rdPercentage\":%d,\"pause\":%d,"
-                 "\"optind\":%d,\"argc\":%d,\"cliForceInit\":%d,\"cliForcePreM5Exit\":%d}",
+                 "\"optind\":%d,\"argc\":%d,\"cliSkipInit\":%d,\"cliSkipPreM5Exit\":%d,"
+                 "\"cliForceInit\":%d,\"cliForcePreM5Exit\":%d}",
                  STREAM_ARRAY_SIZE,
                  rd_percentage,
                  pause,
                  optind,
                  argc,
+                 cli_skip_init,
+                 cli_skip_pre_m5_exit,
                  cli_force_init,
                  cli_force_pre_m5_exit);
         // #region agent log
@@ -523,6 +534,8 @@ int main(int argc, char *argv[])
         int skip_init = 1;
         if (cli_force_init)
             skip_init = 0;
+        if (cli_skip_init)
+            skip_init = 1;
         {
             char data_json[128];
             snprintf(data_json, sizeof(data_json),
@@ -565,6 +578,8 @@ int main(int argc, char *argv[])
         int skip_pre_roi_exit = 1;
         if (cli_force_pre_m5_exit)
             skip_pre_roi_exit = 0;
+        if (cli_skip_pre_m5_exit)
+            skip_pre_roi_exit = 1;
         {
             char data_json[96];
             snprintf(data_json, sizeof(data_json),
