@@ -557,6 +557,42 @@ int main(int argc, char *argv[])
                 b[j] = 2.0;
             }
         }
+        else
+        {
+            /* Touch one element per 4 KiB page so anonymous pages are materialized.
+             * Without this, read-only kernels can hit the shared zero page and
+             * under-report DRAM bandwidth despite executing the loop correctly.
+             */
+            const ssize_t page_touch_stride = 512; /* 4096 B / sizeof(double) */
+            ssize_t touched = 0;
+#ifdef _OPENMP
+            #pragma omp parallel for reduction(+:touched)
+#endif
+            for (j = 0; j < array_elements; j += page_touch_stride)
+            {
+                a[j] = 1.0;
+                b[j] = 2.0;
+                touched++;
+            }
+            if (array_elements > 0 && ((array_elements - 1) % page_touch_stride) != 0)
+            {
+                a[array_elements - 1] = 1.0;
+                b[array_elements - 1] = 2.0;
+                touched++;
+            }
+            {
+                char data_json[192];
+                snprintf(data_json, sizeof(data_json),
+                         "{\"pageTouchStride\":%lld,\"touched\":%lld,\"arrayElements\":%lld}",
+                         (long long)page_touch_stride,
+                         (long long)touched,
+                         (long long)array_elements);
+                // #region agent log
+                debug_log_json("pre-fix", "H10", "stream_omp.c:setup:page-touch",
+                               "Performed lightweight page-touch init", data_json);
+                // #endregion
+            }
+        }
         {
             // #region agent log
             debug_log_json("pre-fix", "H9", "stream_omp.c:setup:init-end",
