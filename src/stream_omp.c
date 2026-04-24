@@ -194,7 +194,7 @@ void m5_dump_stats(uint64_t delay, uint64_t period) {
 double * __restrict a, * __restrict b;
 ssize_t array_elements, array_bytes, array_alignment;
 
-const char *usage = "[-r <read_ratio>] [-p <pause>] [-s <array_size>] [-n <iterations>] [-i] [-e] [-I] [-E] [-m]\n";
+const char *usage = "[-r <read_ratio>] [-p <pause>] [-s <array_size>] [-n <iterations>] [-i] [-e] [-I] [-E]\n";
 
 void (*STREAM_copy_rw)(double *a_array, double *b_array,
                          ssize_t *array_size, const int* const pause) = NULL;
@@ -207,14 +207,13 @@ int main(int argc, char *argv[])
     ssize_t j;
     int pause = 0;
     int run_iterations = NTIMES;
-    int cli_materialize_read_pages = 0;
     int cli_skip_init = 0;
     int cli_skip_pre_m5_exit = 0;
     int cli_force_init = 0;
     int cli_force_pre_m5_exit = 0;
 
     // Command line parsing
-    while (( opt = getopt(argc, argv, ":r:p:s:n:IEiem")) != -1)
+    while (( opt = getopt(argc, argv, ":r:p:s:n:IEie")) != -1)
     {
         switch(opt)
         {
@@ -257,9 +256,6 @@ int main(int argc, char *argv[])
             case 'e':
                 cli_skip_pre_m5_exit = 1;
                 break;
-            case 'm':
-                cli_materialize_read_pages = 1;
-                break;
 	    default:
                 print_usage(argv, (char *)usage);
                 exit(-1);
@@ -277,8 +273,7 @@ int main(int argc, char *argv[])
         snprintf(data_json, sizeof(data_json),
                  "{\"streamArraySize\":%lld,\"rdPercentage\":%d,\"pause\":%d,"
                  "\"optind\":%d,\"argc\":%d,\"cliSkipInit\":%d,\"cliSkipPreM5Exit\":%d,"
-                 "\"cliForceInit\":%d,\"cliForcePreM5Exit\":%d,\"runIterations\":%d,"
-                 "\"cliMaterializeReadPages\":%d}",
+                 "\"cliForceInit\":%d,\"cliForcePreM5Exit\":%d,\"runIterations\":%d}",
                  STREAM_ARRAY_SIZE,
                  rd_percentage,
                  pause,
@@ -288,8 +283,7 @@ int main(int argc, char *argv[])
                  cli_skip_pre_m5_exit,
                  cli_force_init,
                  cli_force_pre_m5_exit,
-                 run_iterations,
-                 cli_materialize_read_pages);
+                 run_iterations);
         // #region agent log
         debug_log_json("pre-fix", "H1", "stream_omp.c:main:post-parse",
                        "Parsed CLI arguments", data_json);
@@ -571,40 +565,6 @@ int main(int argc, char *argv[])
             {
                 a[j] = 1.0;
                 b[j] = 2.0;
-            }
-        }
-        else if (rd_percentage == 100 && cli_materialize_read_pages)
-        {
-            /* H12 probe: materialize read pages for a[] in single-thread mode.
-             * Parallel page-fault storms were too expensive in GEM5.
-             */
-            const ssize_t page_touch_stride = 512; /* 4096 B / sizeof(double) */
-            ssize_t touched = 0;
-            long long touch_start_ms = debug_now_ms();
-            for (j = 0; j < array_elements; j += page_touch_stride)
-            {
-                a[j] = 1.0;
-                touched++;
-            }
-            if (array_elements > 0 && ((array_elements - 1) % page_touch_stride) != 0)
-            {
-                a[array_elements - 1] = 1.0;
-                touched++;
-            }
-            {
-                char data_json[256];
-                long long touch_end_ms = debug_now_ms();
-                snprintf(data_json, sizeof(data_json),
-                         "{\"enabled\":1,\"rdPercentage\":%d,\"pageTouchStride\":%lld,"
-                         "\"touched\":%lld,\"elapsedMs\":%lld}",
-                         rd_percentage,
-                         (long long)page_touch_stride,
-                         (long long)touched,
-                         (long long)(touch_end_ms - touch_start_ms));
-                // #region agent log
-                debug_log_json("pre-fix", "H12", "stream_omp.c:setup:materialize-read-pages",
-                               "Materialized read pages for a[]", data_json);
-                // #endregion
             }
         }
         {
