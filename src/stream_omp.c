@@ -733,6 +733,18 @@ int main(int argc, char *argv[])
         }
 
 #ifdef _OPENMP
+        if (thread_id < 4)
+        {
+            char data_json[160];
+            snprintf(data_json, sizeof(data_json),
+                     "{\"threadId\":%d,\"localElements\":%lld,\"runIterations\":%d}",
+                     thread_id, (long long)local_elements, run_iterations);
+            // #region agent log
+            debug_log_json("pre-fix", "H14", "stream_omp.c:parallel:before-final-barrier",
+                           "Thread reached final barrier point", data_json);
+            // #endregion
+        }
+        #pragma omp barrier
         #pragma omp barrier
         #pragma omp master
 #endif
