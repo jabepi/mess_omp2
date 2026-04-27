@@ -745,7 +745,6 @@ int main(int argc, char *argv[])
             // #endregion
         }
         #pragma omp barrier
-        #pragma omp barrier
         #pragma omp master
 #endif
         {
