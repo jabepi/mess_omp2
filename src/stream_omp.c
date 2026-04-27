@@ -194,7 +194,7 @@ void m5_dump_stats(uint64_t delay, uint64_t period) {
 double * __restrict a, * __restrict b;
 ssize_t array_elements, array_bytes, array_alignment;
 
-const char *usage = "[-r <read_ratio>] [-p <pause>] [-s <array_size>] [-n <iterations>] [-i] [-e] [-I] [-E]\n";
+const char *usage = "[-r <read_ratio>] [-p <pause>] [-s <array_size>] [-n <iterations>] [-i] [-e] [-I] [-E] [-u]\n";
 
 void (*STREAM_copy_rw)(double *a_array, double *b_array,
                          ssize_t *array_size, const int* const pause) = NULL;
@@ -211,9 +211,10 @@ int main(int argc, char *argv[])
     int cli_skip_pre_m5_exit = 0;
     int cli_force_init = 0;
     int cli_force_pre_m5_exit = 0;
+    int cli_unpartitioned = 0;
 
     // Command line parsing
-    while (( opt = getopt(argc, argv, ":r:p:s:n:IEie")) != -1)
+    while (( opt = getopt(argc, argv, ":r:p:s:n:IEieu")) != -1)
     {
         switch(opt)
         {
@@ -256,6 +257,9 @@ int main(int argc, char *argv[])
             case 'e':
                 cli_skip_pre_m5_exit = 1;
                 break;
+            case 'u':
+                cli_unpartitioned = 1;
+                break;
 	    default:
                 print_usage(argv, (char *)usage);
                 exit(-1);
@@ -273,7 +277,8 @@ int main(int argc, char *argv[])
         snprintf(data_json, sizeof(data_json),
                  "{\"streamArraySize\":%lld,\"rdPercentage\":%d,\"pause\":%d,"
                  "\"optind\":%d,\"argc\":%d,\"cliSkipInit\":%d,\"cliSkipPreM5Exit\":%d,"
-                 "\"cliForceInit\":%d,\"cliForcePreM5Exit\":%d,\"runIterations\":%d}",
+                 "\"cliForceInit\":%d,\"cliForcePreM5Exit\":%d,\"runIterations\":%d,"
+                 "\"cliUnpartitioned\":%d}",
                  STREAM_ARRAY_SIZE,
                  rd_percentage,
                  pause,
@@ -283,7 +288,8 @@ int main(int argc, char *argv[])
                  cli_skip_pre_m5_exit,
                  cli_force_init,
                  cli_force_pre_m5_exit,
-                 run_iterations);
+                 run_iterations,
+                 cli_unpartitioned);
         // #region agent log
         debug_log_json("pre-fix", "H1", "stream_omp.c:main:post-parse",
                        "Parsed CLI arguments", data_json);
@@ -642,13 +648,21 @@ int main(int argc, char *argv[])
         local_start = ((thread_id * chunk) + MIN(thread_id, remainder)) *
                       STREAM_KERNEL_GRAIN_ELEMS;
         local_elements = local_blocks * STREAM_KERNEL_GRAIN_ELEMS;
+        if (cli_unpartitioned)
+        {
+            /* H17 probe: emulate v1 style where each thread traverses full range. */
+            local_blocks = total_blocks;
+            local_start = 0;
+            local_elements = array_elements;
+        }
         if (thread_id < 4)
         {
             char data_json[320];
             snprintf(data_json, sizeof(data_json),
                      "{\"threadId\":%d,\"threadCount\":%d,\"totalBlocks\":%lld,"
                      "\"chunk\":%lld,\"remainder\":%lld,\"localBlocks\":%lld,"
-                     "\"localStart\":%lld,\"localElements\":%lld,\"arrayElements\":%lld}",
+                     "\"localStart\":%lld,\"localElements\":%lld,\"arrayElements\":%lld,"
+                     "\"unpartitioned\":%d}",
                      thread_id,
                      thread_count,
                      (long long)total_blocks,
@@ -657,7 +671,8 @@ int main(int argc, char *argv[])
                      (long long)local_blocks,
                      (long long)local_start,
                      (long long)local_elements,
-                     (long long)array_elements);
+                     (long long)array_elements,
+                     cli_unpartitioned);
             // #region agent log
             debug_log_json("pre-fix", "H2", "stream_omp.c:parallel:partition",
                            "Computed thread partition", data_json);
