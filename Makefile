@@ -20,7 +20,7 @@ $(BUILDDIR)/nop.o: $(SRCDIR)/nop.c
 	$(CC) $(CFLAGS) -O3 -c $< -o $@
 
 $(BUILDDIR)/utils.o: $(SRCDIR)/utils.c
-	$(CC) $(CFLAGS) -Wno-unused-but-set-variable -O3 -c ../v1/src/utils.c -o $@
+	$(CC) $(CFLAGS) -Wno-unused-but-set-variable -O3 -c $< -o $@
 
 $(BUILDDIR)/stream_omp_c.o: $(SRCDIR)/stream_omp.c
 	$(CC) $(CFLAGS)  -O3 -c $< -o $@

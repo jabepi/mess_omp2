@@ -546,6 +546,19 @@ int main(int argc, char *argv[])
             skip_init = 0;
         if (cli_skip_init)
             skip_init = 1;
+        if (skip_init && rd_percentage >= 98)
+        {
+            /* H16 confirmed: skipping init with very high read ratios keeps
+             * traffic off DRAM (zero-page effects). Force full init to reach
+             * the expected high-bandwidth behavior for read-heavy kernels.
+             */
+            skip_init = 0;
+            // #region agent log
+            debug_log_json("pre-fix", "H16", "stream_omp.c:setup:auto-force-init",
+                           "Overrode skip init for high read ratio",
+                           "{\"reason\":\"high_read_ratio\",\"threshold\":98}");
+            // #endregion
+        }
         {
             char data_json[128];
             snprintf(data_json, sizeof(data_json),
