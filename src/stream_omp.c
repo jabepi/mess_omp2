@@ -194,7 +194,7 @@ void m5_dump_stats(uint64_t delay, uint64_t period) {
 double * __restrict a, * __restrict b;
 ssize_t array_elements, array_bytes, array_alignment;
 
-const char *usage = "[-r <read_ratio>] [-p <pause>] [-s <array_size>] [-n <iterations>] [-i] [-e] [-I] [-E]\n";
+const char *usage = "[-r <read_ratio>] [-p <pause>] [-s <array_size>] [-n <iterations>] [-P <period_ticks>] [-i] [-e] [-I] [-E]\n";
 
 void (*STREAM_copy_rw)(double *a_array, double *b_array,
                          ssize_t *array_size, const int* const pause) = NULL;
@@ -207,13 +207,14 @@ int main(int argc, char *argv[])
     ssize_t j;
     int pause = 0;
     int run_iterations = NTIMES;
+    long long periodic_stats_ticks = 0;
     int cli_skip_init = 0;
     int cli_skip_pre_m5_exit = 0;
     int cli_force_init = 0;
     int cli_force_pre_m5_exit = 0;
 
     // Command line parsing
-    while (( opt = getopt(argc, argv, ":r:p:s:n:IEie")) != -1)
+    while (( opt = getopt(argc, argv, ":r:p:s:n:P:IEie")) != -1)
     {
         switch(opt)
         {
@@ -241,6 +242,14 @@ int main(int argc, char *argv[])
                 if (run_iterations <= 0)
                 {
                     printf("ERROR: Iterations must be a positive integer.\n");
+                    exit(-1);
+                }
+                break;
+            case 'P':
+                periodic_stats_ticks = atoll(optarg);
+                if (periodic_stats_ticks < 0)
+                {
+                    printf("ERROR: periodic stats ticks must be >= 0.\n");
                     exit(-1);
                 }
                 break;
@@ -273,7 +282,8 @@ int main(int argc, char *argv[])
         snprintf(data_json, sizeof(data_json),
                  "{\"streamArraySize\":%lld,\"rdPercentage\":%d,\"pause\":%d,"
                  "\"optind\":%d,\"argc\":%d,\"cliSkipInit\":%d,\"cliSkipPreM5Exit\":%d,"
-                 "\"cliForceInit\":%d,\"cliForcePreM5Exit\":%d,\"runIterations\":%d}",
+                 "\"cliForceInit\":%d,\"cliForcePreM5Exit\":%d,\"runIterations\":%d,"
+                 "\"periodicStatsTicks\":%lld}",
                  STREAM_ARRAY_SIZE,
                  rd_percentage,
                  pause,
@@ -283,7 +293,8 @@ int main(int argc, char *argv[])
                  cli_skip_pre_m5_exit,
                  cli_force_init,
                  cli_force_pre_m5_exit,
-                 run_iterations);
+                 run_iterations,
+                 periodic_stats_ticks);
         // #region agent log
         debug_log_json("pre-fix", "H1", "stream_omp.c:main:post-parse",
                        "Parsed CLI arguments", data_json);
@@ -687,6 +698,17 @@ int main(int argc, char *argv[])
                            "Issuing m5_dump_reset_stats", "{\"ok\":1}");
             // #endregion
             m5_dump_reset_stats(0, 0);
+            if (periodic_stats_ticks > 0)
+            {
+                char data_json[128];
+                snprintf(data_json, sizeof(data_json),
+                         "{\"periodTicks\":%lld}", periodic_stats_ticks);
+                // #region agent log
+                debug_log_json("pre-fix", "H18", "stream_omp.c:parallel:periodic-stats",
+                               "Enabled periodic m5_dump_stats", data_json);
+                // #endregion
+                m5_dump_stats(0, (uint64_t)periodic_stats_ticks);
+            }
         }
 #ifdef _OPENMP
         #pragma omp barrier
