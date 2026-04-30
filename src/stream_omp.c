@@ -40,38 +40,8 @@
 # include <float.h>
 # include <string.h>
 # include <limits.h>
-# include <sys/time.h>
 # include <stdint.h>
 # include <omp.h>
-
-#define DEBUG_LOG_PATH "/home/gem5/mess_omp2/debug-2ac992.log"
-#define DEBUG_SESSION_ID "2ac992"
-
-static long long debug_now_ms(void)
-{
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return ((long long)tv.tv_sec * 1000LL) + ((long long)tv.tv_usec / 1000LL);
-}
-
-static void debug_log_json(const char *run_id,
-                           const char *hypothesis_id,
-                           const char *location,
-                           const char *message,
-                           const char *data_json)
-{
-    fprintf(stdout,
-            "{\"sessionId\":\"%s\",\"runId\":\"%s\",\"hypothesisId\":\"%s\","
-            "\"location\":\"%s\",\"message\":\"%s\",\"data\":%s,\"timestamp\":%lld}\n",
-            DEBUG_SESSION_ID,
-            run_id,
-            hypothesis_id,
-            location,
-            message,
-            data_json,
-            debug_now_ms());
-    fflush(stdout);
-}
 
 void m5_dump_reset_stats(uint64_t delay, uint64_t period) {
 #if defined(__aarch64__)
@@ -277,30 +247,6 @@ int main(int argc, char *argv[])
         print_usage(argv, (char *)usage);
         exit(-1);
     }
-    {
-        char data_json[256];
-        snprintf(data_json, sizeof(data_json),
-                 "{\"streamArraySize\":%lld,\"rdPercentage\":%d,\"pause\":%d,"
-                 "\"optind\":%d,\"argc\":%d,\"cliSkipInit\":%d,\"cliSkipPreM5Exit\":%d,"
-                 "\"cliForceInit\":%d,\"cliForcePreM5Exit\":%d,\"runIterations\":%d,"
-                 "\"periodicStatsTicks\":%lld}",
-                 STREAM_ARRAY_SIZE,
-                 rd_percentage,
-                 pause,
-                 optind,
-                 argc,
-                 cli_skip_init,
-                 cli_skip_pre_m5_exit,
-                 cli_force_init,
-                 cli_force_pre_m5_exit,
-                 run_iterations,
-                 periodic_stats_ticks);
-        // #region agent log
-        debug_log_json("pre-fix", "H1", "stream_omp.c:main:post-parse",
-                       "Parsed CLI arguments", data_json);
-        // #endregion
-    }
-
     // End of command line partsing
 
     // Assigning the right asm function based on the RD ratio
@@ -463,19 +409,6 @@ int main(int argc, char *argv[])
             STREAM_copy_rw = &STREAM_copy_50;
             break;
     }
-    {
-        char data_json[160];
-        snprintf(data_json, sizeof(data_json),
-                 "{\"rdPercentage\":%d,\"kernelPtr\":%llu}",
-                 rd_percentage,
-                 (unsigned long long)(uintptr_t)STREAM_copy_rw);
-        // #region agent log
-        debug_log_json("pre-fix", "H3", "stream_omp.c:main:kernel-select",
-                       "Selected kernel function", data_json);
-        // #endregion
-    }
-
-
     /* --- distribute requested storage across MPI ranks --- */
     array_elements = STREAM_ARRAY_SIZE;              // don't worry about rounding vs truncation
     if (array_elements % STREAM_KERNEL_GRAIN_ELEMS != 0)
@@ -564,21 +497,6 @@ int main(int argc, char *argv[])
              * the expected high-bandwidth behavior for read-heavy kernels.
              */
             skip_init = 0;
-            // #region agent log
-            debug_log_json("pre-fix", "H16", "stream_omp.c:setup:auto-force-init",
-                           "Overrode skip init for high read ratio",
-                           "{\"reason\":\"high_read_ratio\",\"threshold\":98}");
-            // #endregion
-        }
-        {
-            char data_json[128];
-            snprintf(data_json, sizeof(data_json),
-                     "{\"skipInit\":%d,\"arrayElements\":%lld}",
-                     skip_init, (long long)array_elements);
-            // #region agent log
-            debug_log_json("pre-fix", "H9", "stream_omp.c:setup:init-start",
-                           "About to initialize arrays", data_json);
-            // #endregion
         }
         if (!skip_init)
         {
@@ -591,53 +509,20 @@ int main(int argc, char *argv[])
                 b[j] = 2.0;
             }
         }
-        {
-            // #region agent log
-            debug_log_json("pre-fix", "H9", "stream_omp.c:setup:init-end",
-                           "Finished array initialization", "{\"ok\":1}");
-            // #endregion
-        }
     }
 
     /*	--- MAIN LOOP --- repeat the kernel like STREAM --- */
-    
-    {
-        // #region agent log
-        debug_log_json("pre-fix", "H6", "stream_omp.c:main:roi-enter",
-                       "Entering ROI parallel section",
-                       "{\"note\":\"before parallel region\"}");
-        // #endregion
-    }
+
     {
         int skip_pre_roi_exit = 1;
         if (cli_force_pre_m5_exit)
             skip_pre_roi_exit = 0;
         if (cli_skip_pre_m5_exit)
             skip_pre_roi_exit = 1;
-        {
-            char data_json[96];
-            snprintf(data_json, sizeof(data_json),
-                     "{\"skipPreM5Exit\":%d}", skip_pre_roi_exit);
-            // #region agent log
-            debug_log_json("pre-fix", "H8", "stream_omp.c:main:pre-m5-exit",
-                           "About to execute pre-ROI m5_exit", data_json);
-            // #endregion
-        }
         if (!skip_pre_roi_exit)
         {
             // Trigger Python to switch from ATOMIC CPU to O3 CPU precisely before the ROI
             m5_exit(0);
-            // #region agent log
-            debug_log_json("pre-fix", "H8", "stream_omp.c:main:post-m5-exit",
-                           "Returned from pre-ROI m5_exit", "{\"returned\":1}");
-            // #endregion
-        }
-        else
-        {
-            // #region agent log
-            debug_log_json("pre-fix", "H8", "stream_omp.c:main:post-m5-exit",
-                           "Skipped pre-ROI m5_exit by env", "{\"returned\":0}");
-            // #endregion
         }
     }
 
@@ -666,47 +551,14 @@ int main(int argc, char *argv[])
         local_start = ((thread_id * chunk) + MIN(thread_id, remainder)) *
                       STREAM_KERNEL_GRAIN_ELEMS;
         local_elements = local_blocks * STREAM_KERNEL_GRAIN_ELEMS;
-        if (thread_id < 4)
-        {
-            char data_json[320];
-            snprintf(data_json, sizeof(data_json),
-                     "{\"threadId\":%d,\"threadCount\":%d,\"totalBlocks\":%lld,"
-                     "\"chunk\":%lld,\"remainder\":%lld,\"localBlocks\":%lld,"
-                     "\"localStart\":%lld,\"localElements\":%lld,\"arrayElements\":%lld}",
-                     thread_id,
-                     thread_count,
-                     (long long)total_blocks,
-                     (long long)chunk,
-                     (long long)remainder,
-                     (long long)local_blocks,
-                     (long long)local_start,
-                     (long long)local_elements,
-                     (long long)array_elements);
-            // #region agent log
-            debug_log_json("pre-fix", "H2", "stream_omp.c:parallel:partition",
-                           "Computed thread partition", data_json);
-            // #endregion
-        }
-
 #ifdef _OPENMP
         #pragma omp barrier
         #pragma omp master
 #endif
         {
-            // #region agent log
-            debug_log_json("pre-fix", "H6", "stream_omp.c:parallel:reset",
-                           "Issuing m5_dump_reset_stats", "{\"ok\":1}");
-            // #endregion
             m5_dump_reset_stats(0, 0);
             if (periodic_stats_ticks > 0)
             {
-                char data_json[128];
-                snprintf(data_json, sizeof(data_json),
-                         "{\"periodTicks\":%lld}", periodic_stats_ticks);
-                // #region agent log
-                debug_log_json("pre-fix", "H18", "stream_omp.c:parallel:periodic-stats",
-                               "Enabled periodic m5_dump_stats", data_json);
-                // #endregion
                 m5_dump_stats(0, (uint64_t)periodic_stats_ticks);
             }
         }
@@ -716,82 +568,17 @@ int main(int argc, char *argv[])
 
         for (iter = 0; iter < run_iterations; iter++)
         {
-            if (thread_id == 0)
-            {
-                char data_json[96];
-                snprintf(data_json, sizeof(data_json),
-                         "{\"iter\":%d,\"runIterations\":%d}", iter, run_iterations);
-                // #region agent log
-                debug_log_json("pre-fix", "H11", "stream_omp.c:parallel:iter-start",
-                               "Starting kernel iteration", data_json);
-                // #endregion
-            }
             if (local_elements > 0)
             {
-                if (iter == 0 && thread_id == 0)
-                {
-                    // #region agent log
-                    debug_log_json("pre-fix", "H7", "stream_omp.c:parallel:before-kernel",
-                                   "About to call STREAM_copy_rw", "{\"threadId\":0,\"iter\":0}");
-                    // #endregion
-                }
-                long long t_start = debug_now_ms();
                 STREAM_copy_rw(a + local_start, b + local_start, &local_elements, &pause);
-                if (iter == 0 && thread_id < 2)
-                {
-                    long long t_end = debug_now_ms();
-                    char data_json[256];
-                    snprintf(data_json, sizeof(data_json),
-                             "{\"threadId\":%d,\"iter\":%d,\"localElements\":%lld,"
-                             "\"elapsedMs\":%lld,\"pause\":%d}",
-                             thread_id,
-                             iter,
-                             (long long)local_elements,
-                             (long long)(t_end - t_start),
-                             pause);
-                    // #region agent log
-                    debug_log_json("pre-fix", "H4", "stream_omp.c:parallel:kernel-call",
-                                   "Kernel call timing sample", data_json);
-                    // #endregion
-                }
-            }
-            if (thread_id == 0)
-            {
-                char data_json[96];
-                snprintf(data_json, sizeof(data_json),
-                         "{\"iter\":%d,\"runIterations\":%d}", iter, run_iterations);
-                // #region agent log
-                debug_log_json("pre-fix", "H11", "stream_omp.c:parallel:iter-end",
-                               "Finished kernel iteration", data_json);
-                // #endregion
             }
         }
 
 #ifdef _OPENMP
-        if (thread_id < 4)
-        {
-            char data_json[160];
-            snprintf(data_json, sizeof(data_json),
-                     "{\"threadId\":%d,\"localElements\":%lld,\"runIterations\":%d}",
-                     thread_id, (long long)local_elements, run_iterations);
-            // #region agent log
-            debug_log_json("pre-fix", "H14", "stream_omp.c:parallel:before-final-barrier",
-                           "Thread reached final barrier point", data_json);
-            // #endregion
-        }
         #pragma omp barrier
         #pragma omp master
 #endif
         {
-            char data_json[160];
-            snprintf(data_json, sizeof(data_json),
-                     "{\"ntimes\":%d,\"arrayElements\":%lld}",
-                     run_iterations,
-                     (long long)array_elements);
-            // #region agent log
-            debug_log_json("pre-fix", "H5", "stream_omp.c:parallel:roi-end",
-                           "Reached ROI end before dump_stats", data_json);
-            // #endregion
             m5_dump_stats(0, 0);
             // End the simulation immediately after the timed region completes.
             m5_exit(0);
