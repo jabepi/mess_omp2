@@ -498,6 +498,9 @@ int main(int argc, char *argv[])
              */
             skip_init = 0;
         }
+        fprintf(stderr, "[MDBG] init-start skip_init=%d array_elements=%lld\n",
+                skip_init, (long long)array_elements);
+        fflush(stderr);
         if (!skip_init)
         {
 #ifdef _OPENMP
@@ -509,6 +512,8 @@ int main(int argc, char *argv[])
                 b[j] = 2.0;
             }
         }
+        fprintf(stderr, "[MDBG] init-end\n");
+        fflush(stderr);
     }
 
     /*	--- MAIN LOOP --- repeat the kernel like STREAM --- */
@@ -557,11 +562,16 @@ int main(int argc, char *argv[])
         #pragma omp master
 #endif
         {
+            fprintf(stderr, "[MDBG] roi-reset-start threads=%d run_iterations=%d\n",
+                    thread_count, run_iterations);
+            fflush(stderr);
             m5_dump_reset_stats(0, 0);
             if (periodic_stats_ticks > 0)
             {
                 m5_dump_stats(0, (uint64_t)periodic_stats_ticks);
             }
+            fprintf(stderr, "[MDBG] roi-reset-end\n");
+            fflush(stderr);
         }
 #ifdef _OPENMP
         #pragma omp barrier
@@ -571,7 +581,18 @@ int main(int argc, char *argv[])
         {
             if (local_elements > 0)
             {
+                if (thread_id == 0 && iter == 0)
+                {
+                    fprintf(stderr, "[MDBG] kernel-start thread=0 local_elements=%lld\n",
+                            (long long)local_elements);
+                    fflush(stderr);
+                }
                 STREAM_copy_rw(a + local_start, b + local_start, &local_elements, &pause);
+                if (thread_id == 0 && iter == 0)
+                {
+                    fprintf(stderr, "[MDBG] kernel-end thread=0\n");
+                    fflush(stderr);
+                }
             }
         }
 
@@ -580,8 +601,12 @@ int main(int argc, char *argv[])
         #pragma omp master
 #endif
         {
+            fprintf(stderr, "[MDBG] roi-end-start\n");
+            fflush(stderr);
             m5_dump_stats(0, 0);
             // End the simulation immediately after the timed region completes.
+            fprintf(stderr, "[MDBG] m5-exit-call\n");
+            fflush(stderr);
             m5_exit(0);
         }
     }
