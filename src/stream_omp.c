@@ -503,13 +503,15 @@ int main(int argc, char *argv[])
         fflush(stderr);
         if (!skip_init)
         {
+            int init_b_array = (rd_percentage < 98);
 #ifdef _OPENMP
             #pragma omp parallel for
 #endif
             for (j=0; j<array_elements; j++)
             {
                 a[j] = 1.0;
-                b[j] = 2.0;
+                if (init_b_array)
+                    b[j] = 2.0;
             }
         }
         fprintf(stderr, "[MDBG] init-end\n");
