@@ -862,12 +862,12 @@ int main(int argc, char *argv[])
         }
         if (!skip_pre_roi_exit)
         {
-            // Trigger Python to switch from ATOMIC CPU to O3 CPU precisely before the ROI
-            m5_exit(0);
-            // #region agent log
-            // debug_log_json("pre-fix", "H8", "stream_omp.c:main:post-m5-exit",
-            //                "Returned from pre-ROI m5_exit", "{\"returned\":1}");
-            // #endregion
+            /* Keep the old CLI contract, but avoid pre-ROI termination so that
+             * standalone runs always reach ROI-end reporting (including latency).
+             * Final ROI termination is still done at the end of the timed region.
+             */
+            printf("INFO: pre-ROI m5_exit request ignored to preserve ROI-end latency reporting.\n");
+            fflush(stdout);
         }
         else
         {
@@ -1028,6 +1028,7 @@ int main(int argc, char *argv[])
             printf("pointer chase timing: total_ns=%llu total_loads=%llu\n",
                     (unsigned long long)pointer_chase_total_ns,
                     pointer_chase_total_loads);
+            fflush(stdout);
             
             m5_dump_stats(0, 0);
             // End the simulation immediately after the timed region completes.
