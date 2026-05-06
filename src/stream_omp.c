@@ -42,6 +42,7 @@
 # include <limits.h>
 # include <sys/time.h>
 # include <stdint.h>
+# include <errno.h>
 # include <omp.h>
 
 #define DEBUG_LOG_PATH "/home/gem5/mess_omp2/debug-2ac992.log"
@@ -189,12 +190,165 @@ void m5_dump_stats(uint64_t delay, uint64_t period) {
 #endif
 
 #define STREAM_KERNEL_GRAIN_ELEMS 400
+#define POINTER_CHASE_CACHE_LINE 128
 
 // Some compilers require an extra keyword to recognize the "restrict" qualifier.
 double * __restrict a, * __restrict b;
 ssize_t array_elements, array_bytes, array_alignment;
 
-const char *usage = "[-r <read_ratio>] [-p <pause>] [-s <array_size>] [-n <iterations>] [-P <period_ticks>] [-i] [-e] [-I] [-E]\n";
+struct pointer_chase_line
+{
+    uint64_t next_offset;
+    uint8_t pad[POINTER_CHASE_CACHE_LINE - sizeof(uint64_t)];
+};
+
+static void shuffle_u64(uint64_t *array, uint64_t n)
+{
+    uint64_t i;
+
+    srand(0);
+    if (n <= 1)
+        return;
+
+    for (i = 0; i < n - 1; i++)
+    {
+        uint64_t j = i + (uint64_t)(rand() / (RAND_MAX / (n - i) + 1));
+        uint64_t t = array[j];
+        array[j] = array[i];
+        array[i] = t;
+    }
+}
+
+static void generate_pointer_walk(struct pointer_chase_line *walk_array, uint64_t elems)
+{
+    uint64_t *seq;
+    uint64_t *res;
+    uint64_t j;
+
+    if (elems == 0)
+        return;
+
+    if (elems == 1)
+    {
+        walk_array[0].next_offset = 0;
+        return;
+    }
+
+    seq = (uint64_t *)malloc((elems - 1) * sizeof(uint64_t));
+    res = (uint64_t *)malloc(elems * sizeof(uint64_t));
+
+    if (seq == NULL || res == NULL)
+    {
+        fprintf(stderr, "WARNING: pointer-chase permutation allocation failed; using sequential ring.\n");
+        for (j = 0; j < elems; j++)
+            walk_array[j].next_offset = ((j + 1) % elems) * POINTER_CHASE_CACHE_LINE;
+        free(seq);
+        free(res);
+        return;
+    }
+
+    for (j = 1; j < elems; j++)
+        seq[j - 1] = j;
+
+    shuffle_u64(seq, elems - 1);
+
+    res[0] = seq[0];
+    {
+        uint64_t cursor = res[0];
+        for (j = 0; j < elems - 1; j++)
+        {
+            res[cursor] = seq[j];
+            cursor = res[cursor];
+        }
+    }
+
+    for (j = 0; j < elems; j++)
+        walk_array[j].next_offset = res[j] * POINTER_CHASE_CACHE_LINE;
+
+    free(seq);
+    free(res);
+}
+
+static int load_pointer_walk_file(const char *walk_file_path,
+                                  struct pointer_chase_line *walk_array,
+                                  uint64_t elems)
+{
+    FILE *input_file;
+    uint64_t i;
+    unsigned long long tmp;
+    uint64_t max_offset;
+
+    if (walk_file_path == NULL || walk_file_path[0] == '\0')
+        return -1;
+
+    input_file = fopen(walk_file_path, "r");
+    if (input_file == NULL)
+        return -1;
+
+    max_offset = elems * POINTER_CHASE_CACHE_LINE;
+    for (i = 0; i < elems; i++)
+    {
+        if (fscanf(input_file, "%llu", &tmp) != 1)
+        {
+            fclose(input_file);
+            return -1;
+        }
+        if ((tmp % POINTER_CHASE_CACHE_LINE) != 0 || tmp >= max_offset)
+        {
+            fclose(input_file);
+            return -1;
+        }
+        walk_array[i].next_offset = (uint64_t)tmp;
+    }
+
+    fclose(input_file);
+    return 0;
+}
+
+static void init_pointer_walk(const char *walk_file_path,
+                              struct pointer_chase_line *walk_array,
+                              uint64_t elems)
+{
+    if (load_pointer_walk_file(walk_file_path, walk_array, elems) == 0)
+    {
+        printf("Pointer walk loaded from '%s'.\n", walk_file_path);
+        return;
+    }
+
+    printf("Pointer walk file '%s' unavailable or invalid; generating deterministic walk in-memory.\n",
+           walk_file_path ? walk_file_path : "(null)");
+    generate_pointer_walk(walk_array, elems);
+}
+
+static uint64_t pointer_chase_kernel(struct pointer_chase_line *walk_array,
+                                     uint64_t elems,
+                                     int chase_iterations,
+                                     int chase_loads_per_iter)
+{
+    uint64_t iter;
+    uint64_t step;
+    uint64_t next_offset = 0;
+    uint8_t *base_addr;
+
+    if (walk_array == NULL || elems == 0 || chase_iterations <= 0 || chase_loads_per_iter <= 0)
+        return 0;
+
+    base_addr = (uint8_t *)walk_array;
+    for (iter = 0; iter < (uint64_t)chase_iterations; iter++)
+    {
+        for (step = 0; step < (uint64_t)chase_loads_per_iter; step++)
+        {
+            volatile uint64_t *entry = (volatile uint64_t *)(base_addr + next_offset);
+            next_offset = *entry;
+        }
+    }
+
+    return next_offset;
+}
+
+const char *usage = "[-r <read_ratio>] [-p <pause>] [-s <array_size>] [-n <iterations>] [-P <period_ticks>] "
+                    "[-c <chase_elems>] [-x <chase_iters>] [-l <chase_loads_per_iter>] [-w <walk_file>] "
+                    "[-i] [-e] [-I] [-E]\n";
 
 void (*STREAM_copy_rw)(double *a_array, double *b_array,
                          ssize_t *array_size, const int* const pause) = NULL;
@@ -208,13 +362,20 @@ int main(int argc, char *argv[])
     int pause = 0;
     int run_iterations = NTIMES;
     long long periodic_stats_ticks = 0;
+    long long chase_array_elems = 0;
+    ssize_t chase_array_bytes = 0;
+    int chase_iterations = 5000;
+    int chase_loads_per_iter = 64;
+    const char *walk_file_path = "array.dat";
     int cli_skip_init = 0;
     int cli_skip_pre_m5_exit = 0;
     int cli_force_init = 0;
     int cli_force_pre_m5_exit = 0;
+    struct pointer_chase_line *chase_array = NULL;
+    volatile uint64_t chase_sink = 0;
 
     // Command line parsing
-    while (( opt = getopt(argc, argv, ":r:p:s:n:P:IEie")) != -1)
+    while (( opt = getopt(argc, argv, ":r:p:s:n:P:c:x:l:w:IEie")) != -1)
     {
         switch(opt)
         {
@@ -253,6 +414,38 @@ int main(int argc, char *argv[])
                     exit(-1);
                 }
                 break;
+            case 'c':
+                chase_array_elems = atoll(optarg);
+                if (chase_array_elems <= 0)
+                {
+                    printf("ERROR: pointer-chase elements must be > 0.\n");
+                    exit(-1);
+                }
+                break;
+            case 'x':
+                chase_iterations = atoi(optarg);
+                if (chase_iterations <= 0)
+                {
+                    printf("ERROR: pointer-chase iterations must be > 0.\n");
+                    exit(-1);
+                }
+                break;
+            case 'l':
+                chase_loads_per_iter = atoi(optarg);
+                if (chase_loads_per_iter <= 0)
+                {
+                    printf("ERROR: pointer-chase loads per iter must be > 0.\n");
+                    exit(-1);
+                }
+                break;
+            case 'w':
+                walk_file_path = optarg;
+                if (walk_file_path[0] == '\0')
+                {
+                    printf("ERROR: walk file path cannot be empty.\n");
+                    exit(-1);
+                }
+                break;
             case 'I':
                 cli_force_init = 1;
                 break;
@@ -277,30 +470,6 @@ int main(int argc, char *argv[])
         print_usage(argv, (char *)usage);
         exit(-1);
     }
-    {
-        char data_json[256];
-        snprintf(data_json, sizeof(data_json),
-                 "{\"streamArraySize\":%lld,\"rdPercentage\":%d,\"pause\":%d,"
-                 "\"optind\":%d,\"argc\":%d,\"cliSkipInit\":%d,\"cliSkipPreM5Exit\":%d,"
-                 "\"cliForceInit\":%d,\"cliForcePreM5Exit\":%d,\"runIterations\":%d,"
-                 "\"periodicStatsTicks\":%lld}",
-                 STREAM_ARRAY_SIZE,
-                 rd_percentage,
-                 pause,
-                 optind,
-                 argc,
-                 cli_skip_init,
-                 cli_skip_pre_m5_exit,
-                 cli_force_init,
-                 cli_force_pre_m5_exit,
-                 run_iterations,
-                 periodic_stats_ticks);
-        // #region agent log
-        debug_log_json("pre-fix", "H1", "stream_omp.c:main:post-parse",
-                       "Parsed CLI arguments", data_json);
-        // #endregion
-    }
-
     // End of command line partsing
 
     // Assigning the right asm function based on the RD ratio
@@ -498,6 +667,17 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
+    if (chase_array_elems == 0)
+        chase_array_elems = STREAM_ARRAY_SIZE;
+    chase_array_bytes = (ssize_t)chase_array_elems * (ssize_t)sizeof(struct pointer_chase_line);
+    k = posix_memalign((void **)&chase_array, POINTER_CHASE_CACHE_LINE, (size_t)chase_array_bytes);
+    if (k != 0)
+    {
+        printf("Allocation of pointer-chase array failed, return code is %d\n",k);
+        exit(1);
+    }
+    init_pointer_walk(walk_file_path, chase_array, (uint64_t)chase_array_elems);
+
     // Initial informational printouts -- rank 0 handles all the output
     if (1)
     {
@@ -524,6 +704,12 @@ int main(int argc, char *argv[])
         printf("Total Aggregate memory required = %.1f MiB (= %.1f GiB).\n",
           (2.0 * BytesPerWord) * ( (double) STREAM_ARRAY_SIZE / 1024.0/1024.),
           (2.0 * BytesPerWord) * ( (double) STREAM_ARRAY_SIZE / 1024.0/1024./1024.));
+        printf("Pointer-chase array elements = %lld (cache-line nodes)\n", chase_array_elems);
+        printf("Pointer-chase array memory = %.1f MiB (= %.1f GiB).\n",
+          ((double)chase_array_bytes) / 1024.0 / 1024.0,
+          ((double)chase_array_bytes) / 1024.0 / 1024.0 / 1024.0);
+        printf("Pointer-chase config: chase_iters=%d chase_loads_per_iter=%d walk_file='%s'\n",
+               chase_iterations, chase_loads_per_iter, walk_file_path);
 
         printf(HLINE);
         printf("The kernel will be executed %d times.\n", run_iterations);
@@ -647,13 +833,15 @@ int main(int argc, char *argv[])
     {
         int thread_id = 0;
         int thread_count = 1;
+        int stream_worker_count = 0;
+        int stream_worker_idx = -1;
         int iter = 0;
         ssize_t total_blocks = array_elements / STREAM_KERNEL_GRAIN_ELEMS;
-        ssize_t chunk = total_blocks;
+        ssize_t chunk = 0;
         ssize_t remainder = 0;
-        ssize_t local_blocks = total_blocks;
+        ssize_t local_blocks = 0;
         ssize_t local_start = 0;
-        ssize_t local_elements = array_elements;
+        ssize_t local_elements = 0;
 
 #ifdef _OPENMP
         thread_id = omp_get_thread_num();
@@ -666,28 +854,6 @@ int main(int argc, char *argv[])
         local_start = ((thread_id * chunk) + MIN(thread_id, remainder)) *
                       STREAM_KERNEL_GRAIN_ELEMS;
         local_elements = local_blocks * STREAM_KERNEL_GRAIN_ELEMS;
-        if (thread_id < 4)
-        {
-            char data_json[320];
-            snprintf(data_json, sizeof(data_json),
-                     "{\"threadId\":%d,\"threadCount\":%d,\"totalBlocks\":%lld,"
-                     "\"chunk\":%lld,\"remainder\":%lld,\"localBlocks\":%lld,"
-                     "\"localStart\":%lld,\"localElements\":%lld,\"arrayElements\":%lld}",
-                     thread_id,
-                     thread_count,
-                     (long long)total_blocks,
-                     (long long)chunk,
-                     (long long)remainder,
-                     (long long)local_blocks,
-                     (long long)local_start,
-                     (long long)local_elements,
-                     (long long)array_elements);
-            // #region agent log
-            debug_log_json("pre-fix", "H2", "stream_omp.c:parallel:partition",
-                           "Computed thread partition", data_json);
-            // #endregion
-        }
-
 #ifdef _OPENMP
         #pragma omp barrier
         #pragma omp master
@@ -716,26 +882,8 @@ int main(int argc, char *argv[])
 
         for (iter = 0; iter < run_iterations; iter++)
         {
-            if (thread_id == 0)
-            {
-                char data_json[96];
-                snprintf(data_json, sizeof(data_json),
-                         "{\"iter\":%d,\"runIterations\":%d}", iter, run_iterations);
-                // #region agent log
-                debug_log_json("pre-fix", "H11", "stream_omp.c:parallel:iter-start",
-                               "Starting kernel iteration", data_json);
-                // #endregion
-            }
             if (local_elements > 0)
             {
-                if (iter == 0 && thread_id == 0)
-                {
-                    // #region agent log
-                    debug_log_json("pre-fix", "H7", "stream_omp.c:parallel:before-kernel",
-                                   "About to call STREAM_copy_rw", "{\"threadId\":0,\"iter\":0}");
-                    // #endregion
-                }
-                long long t_start = debug_now_ms();
                 STREAM_copy_rw(a + local_start, b + local_start, &local_elements, &pause);
                 if (iter == 0 && thread_id < 2)
                 {
@@ -783,15 +931,6 @@ int main(int argc, char *argv[])
         #pragma omp master
 #endif
         {
-            char data_json[160];
-            snprintf(data_json, sizeof(data_json),
-                     "{\"ntimes\":%d,\"arrayElements\":%lld}",
-                     run_iterations,
-                     (long long)array_elements);
-            // #region agent log
-            debug_log_json("pre-fix", "H5", "stream_omp.c:parallel:roi-end",
-                           "Reached ROI end before dump_stats", data_json);
-            // #endregion
             m5_dump_stats(0, 0);
             // End the simulation immediately after the timed region completes.
             m5_exit(0);
@@ -800,6 +939,7 @@ int main(int argc, char *argv[])
 
     free(a);
     free(b);
+    free(chase_array);
 
     return(0);
 }
