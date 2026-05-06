@@ -870,11 +870,10 @@ int main(int argc, char *argv[])
         }
         if (!skip_pre_roi_exit)
         {
-            /* Keep the old CLI contract, but avoid pre-ROI termination so that
-             * standalone runs always reach ROI-end reporting (including latency).
-             * Final ROI termination is still done at the end of the timed region.
+            /* Do not terminate before ROI. In many gem5 setups, pre-ROI exit
+             * prevents latency reporting. Keep all m5 control at ROI end.
              */
-            printf("INFO: pre-ROI m5_exit request ignored to preserve ROI-end latency reporting.\n");
+            printf("INFO: pre-ROI m5_exit request ignored; ROI-end m5 control remains active.\n");
             fflush(stdout);
         }
         else
@@ -974,6 +973,14 @@ int main(int argc, char *argv[])
                              chase_loads_per_iter);
                     // debug_log_json("pre-fix", "H20", "stream_omp.c:parallel:pointer-chase",
                     //                "Pointer-chase sample", data_json);
+                }
+                if (iter == run_iterations - 1 && pointer_chase_total_loads > 0ULL)
+                {
+                    double latency_ns_live = (double)pointer_chase_total_ns /
+                                             (double)pointer_chase_total_loads;
+                    printf("pointer chase live latency: %.3f ns (before ROI-end hooks)\n",
+                           latency_ns_live);
+                    fflush(stdout);
                 }
             }
             else if (local_elements > 0)
