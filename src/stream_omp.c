@@ -419,10 +419,6 @@ int main(int argc, char *argv[])
     int chase_loads_per_iter = 64;
     const char *walk_file_path = "array.dat";
     int enable_m5_ops = 0;
-    int cli_skip_init = 0;
-    int cli_skip_pre_m5_exit = 0;
-    int cli_force_init = 0;
-    int cli_force_pre_m5_exit = 0;
     struct pointer_chase_line *chase_array = NULL;
     volatile uint64_t chase_sink = 0;
     uint64_t pointer_chase_total_ns = 0;
@@ -437,7 +433,7 @@ int main(int argc, char *argv[])
                 rd_percentage = atoi(optarg);
                 if (rd_percentage < 0 || rd_percentage > 100 || rd_percentage % 2 == 1)
                 {
-                    printf("ERROR: RD ratio has to be even number between 50 and 100.\n");
+                    printf("ERROR: RD ratio has to be even number between 0 and 100.\n");
                     exit(-1);
                 }
                 break;
@@ -502,18 +498,6 @@ int main(int argc, char *argv[])
                 break;
             case 'M':
                 enable_m5_ops = 1;
-                break;
-            case 'I':
-                cli_force_init = 1;
-                break;
-            case 'i':
-                cli_skip_init = 1;
-                break;
-            case 'E':
-                cli_force_pre_m5_exit = 1;
-                break;
-            case 'e':
-                cli_skip_pre_m5_exit = 1;
                 break;
 	    default:
                 print_usage(argv, (char *)usage);
@@ -736,7 +720,7 @@ int main(int argc, char *argv[])
     init_pointer_walk(walk_file_path, chase_array, (uint64_t)chase_array_elems);
 
     // Initial informational printouts -- rank 0 handles all the output
-    if (1)
+    if (0)
     {
         printf(HLINE);
         printf("$ Memory bandwidth load kernel $\n");
@@ -789,48 +773,9 @@ int main(int argc, char *argv[])
             }
         #endif
 
-        #ifdef _OPENMP
-            k = 0;
-            #pragma omp parallel
-            #pragma omp atomic
-                k++;
-                printf ("Number of Threads counted = %i\n",k);
-        #endif
-
     }
 
     /* --- SETUP --- initialize arrays --- */
-    {
-        int skip_init = 1;
-        if (cli_force_init)
-            skip_init = 0;
-        if (cli_skip_init)
-            skip_init = 1;
-        if (skip_init && rd_percentage >= 98)
-        {
-            /* H16 confirmed: skipping init with very high read ratios keeps
-             * traffic off DRAM (zero-page effects). Force full init to reach
-             * the expected high-bandwidth behavior for read-heavy kernels.
-             */
-            skip_init = 0;
-            // #region agent log
-            // debug_log_json("pre-fix", "H16", "stream_omp.c:setup:auto-force-init",
-            //                "Overrode skip init for high read ratio",
-                        //    "{\"reason\":\"high_read_ratio\",\"threshold\":98}");
-            // #endregion
-        }
-        {
-            char data_json[128];
-            snprintf(data_json, sizeof(data_json),
-                     "{\"skipInit\":%d,\"arrayElements\":%lld}",
-                     skip_init, (long long)array_elements);
-            // #region agent log
-            // debug_log_json("pre-fix", "H9", "stream_omp.c:setup:init-start",
-            //                "About to initialize arrays", data_json);
-            // #endregion
-        }
-        if (!skip_init)
-        {
 #ifdef _OPENMP
             #pragma omp parallel for
 #endif
@@ -839,55 +784,8 @@ int main(int argc, char *argv[])
                 a[j] = 1.0;
                 b[j] = 2.0;
             }
-        }
-        {
-            // #region agent log
-            // debug_log_json("pre-fix", "H9", "stream_omp.c:setup:init-end",
-            //                "Finished array initialization", "{\"ok\":1}");
-            // #endregion
-        }
-    }
-
-    /*	--- MAIN LOOP --- repeat the kernel like STREAM --- */
+        
     
-    {
-        // #region agent log
-        // debug_log_json("pre-fix", "H6", "stream_omp.c:main:roi-enter",
-        //                "Entering ROI parallel section",
-                    //    "{\"note\":\"before parallel region\"}");
-        // #endregion
-    }
-    {
-        int skip_pre_roi_exit = 1;
-        if (cli_force_pre_m5_exit)
-            skip_pre_roi_exit = 0;
-        if (cli_skip_pre_m5_exit)
-            skip_pre_roi_exit = 1;
-        {
-            char data_json[96];
-            snprintf(data_json, sizeof(data_json),
-                     "{\"skipPreM5Exit\":%d}", skip_pre_roi_exit);
-            // #region agent log
-            // debug_log_json("pre-fix", "H8", "stream_omp.c:main:pre-m5-exit",
-            //                "About to execute pre-ROI m5_exit", data_json);
-            // #endregion
-        }
-        if (!skip_pre_roi_exit)
-        {
-            /* Do not terminate before ROI. In many gem5 setups, pre-ROI exit
-             * prevents latency reporting. Keep all m5 control at ROI end.
-             */
-            printf("INFO: pre-ROI m5_exit request ignored; ROI-end m5 control remains active.\n");
-            fflush(stdout);
-        }
-        else
-        {
-            // #region agent log
-            // debug_log_json("pre-fix", "H8", "stream_omp.c:main:post-m5-exit",
-            //                "Skipped pre-ROI m5_exit by env", "{\"returned\":0}");
-            // #endregion
-        }
-    }
 
 #ifdef _OPENMP
         #pragma omp parallel
@@ -923,20 +821,6 @@ int main(int argc, char *argv[])
         }
 #ifdef _OPENMP
         #pragma omp barrier
-        #pragma omp master
-#endif
-        {
-            // #region agent log
-            // debug_log_json("pre-fix", "H6", "stream_omp.c:parallel:reset",
-            //                "Issuing m5_dump_reset_stats", "{\"ok\":1}");
-            // #endregion
-            /* Some gem5 wrappers may terminate on early m5 ops. Keep m5 control
-             * at ROI end only, so pointer-chase latency always gets computed.
-             */
-            (void)periodic_stats_ticks;
-        }
-#ifdef _OPENMP
-        #pragma omp barrier
 #endif
 
         for (iter = 0; iter < run_iterations; iter++)
@@ -953,75 +837,21 @@ int main(int argc, char *argv[])
                 pointer_chase_total_ns += (chase_end_ns - chase_begin_ns);
                 pointer_chase_total_loads += (unsigned long long)chase_iterations *
                                              (unsigned long long)chase_loads_per_iter;
-                if (iter == 0)
-                {
-                    char data_json[224];
-                    snprintf(data_json, sizeof(data_json),
-                             "{\"threadId\":%d,\"iter\":%d,\"chaseValue\":%llu,"
-                             "\"chaseIterations\":%d,\"chaseLoadsPerIter\":%d}",
-                             thread_id,
-                             iter,
-                             (unsigned long long)chase_value,
-                             chase_iterations,
-                             chase_loads_per_iter);
-                    // debug_log_json("pre-fix", "H20", "stream_omp.c:parallel:pointer-chase",
-                    //                "Pointer-chase sample", data_json);
-                }
+                
                 if (iter == run_iterations - 1 && pointer_chase_total_loads > 0ULL)
                 {
                     double latency_ns_live = (double)pointer_chase_total_ns /
                                              (double)pointer_chase_total_loads;
-                    printf("pointer chase live latency: %.3f ns (before ROI-end hooks)\n",
-                           latency_ns_live);
-                    fflush(stdout);
                 }
             }
             else if (local_elements > 0)
             {
                 long long t_start = debug_now_ms();
                 STREAM_copy_rw(a + local_start, b + local_start, &local_elements, &pause);
-                if (iter == 0 && stream_worker_idx == 0)
-                {
-                    long long t_end = debug_now_ms();
-                    char data_json[256];
-                    snprintf(data_json, sizeof(data_json),
-                             "{\"threadId\":%d,\"iter\":%d,\"localElements\":%lld,"
-                             "\"elapsedMs\":%lld,\"pause\":%d}",
-                             thread_id,
-                             iter,
-                             (long long)local_elements,
-                             (long long)(t_end - t_start),
-                             pause);
-                    // #region agent log
-                    // debug_log_json("pre-fix", "H4", "stream_omp.c:parallel:kernel-call",
-                    //                "Kernel call timing sample", data_json);
-                    // #endregion
-                }
-            }
-            if (thread_id == 0)
-            {
-                char data_json[96];
-                snprintf(data_json, sizeof(data_json),
-                         "{\"iter\":%d,\"runIterations\":%d}", iter, run_iterations);
-                // #region agent log
-                // debug_log_json("pre-fix", "H11", "stream_omp.c:parallel:iter-end",
-                //                "Finished kernel iteration", data_json);
-                // #endregion
             }
         }
 
 #ifdef _OPENMP
-        if (thread_id < 4)
-        {
-            char data_json[160];
-            snprintf(data_json, sizeof(data_json),
-                     "{\"threadId\":%d,\"localElements\":%lld,\"runIterations\":%d}",
-                     thread_id, (long long)local_elements, run_iterations);
-            // #region agent log
-            // debug_log_json("pre-fix", "H14", "stream_omp.c:parallel:before-final-barrier",
-            //                "Thread reached final barrier point", data_json);
-            // #endregion
-        }
         #pragma omp barrier
         #pragma omp master
 #endif
@@ -1030,8 +860,6 @@ int main(int argc, char *argv[])
             snprintf(data_json, sizeof(data_json),
                      "{\"chaseSink\":%llu}",
                      (unsigned long long)chase_sink);
-            // debug_log_json("pre-fix", "H5", "stream_omp.c:parallel:roi-end",
-            //                "Reached ROI end before dump_stats", data_json);
             
             double latency_ns = (double)pointer_chase_total_ns /
                                 (double)pointer_chase_total_loads;
