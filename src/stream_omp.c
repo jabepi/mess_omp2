@@ -501,6 +501,14 @@ int main(int argc, char *argv[])
             case 'M':
                 enable_m5_ops = 1;
                 break;
+            case 'I':
+            case 'i':
+            case 'E':
+            case 'e':
+                /* Accepted for CLI compatibility with older scripts.
+                 * Current flow keeps initialization and pre-ROI exit policy fixed.
+                 */
+                break;
 	    default:
                 print_usage(argv, (char *)usage);
                 exit(-1);
