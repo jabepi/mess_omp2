@@ -851,8 +851,18 @@ int main(int argc, char *argv[])
             
             double latency_ns = (double)pointer_chase_total_ns /
                                 (double)pointer_chase_total_loads;
+            
             {
                 char latency_json[256];
+                snprintf(latency_json, sizeof(latency_json),
+                         "{\"latencyNs\":%.6f,\"totalNs\":%llu,\"totalLoads\":%llu,"
+                         "\"runIterations\":%d,\"chaseIterations\":%d,\"chaseLoadsPerIter\":%d}",
+                         latency_ns,
+                         (unsigned long long)pointer_chase_total_ns,
+                         pointer_chase_total_loads,
+                         run_iterations,
+                         chase_iterations,
+                         chase_loads_per_iter);
                 debug_log_json("runtime", "LAT", "stream_omp.c:parallel:latency",
                                "Pointer-chase latency computed", latency_json);
             }
