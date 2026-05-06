@@ -397,7 +397,7 @@ static uint64_t pointer_chase_kernel(struct pointer_chase_line *walk_array,
 
 const char *usage = "[-r <read_ratio>] [-p <pause>] [-s <array_size>] [-n <iterations>] [-P <period_ticks>] "
                     "[-c <chase_elems>] [-x <chase_iters>] [-l <chase_loads_per_iter>] [-w <walk_file>] "
-                    "[-i] [-e] [-I] [-E]\n";
+                    "[-i] [-e] [-I] [-E] [-M]\n";
 
 void (*STREAM_copy_rw)(double *a_array, double *b_array,
                          ssize_t *array_size, const int* const pause) = NULL;
@@ -416,6 +416,7 @@ int main(int argc, char *argv[])
     int chase_iterations = 5000;
     int chase_loads_per_iter = 64;
     const char *walk_file_path = "array.dat";
+    int enable_m5_ops = 0;
     int cli_skip_init = 0;
     int cli_skip_pre_m5_exit = 0;
     int cli_force_init = 0;
@@ -426,7 +427,7 @@ int main(int argc, char *argv[])
     unsigned long long pointer_chase_total_loads = 0;
 
     // Command line parsing
-    while (( opt = getopt(argc, argv, ":r:p:s:n:P:c:x:l:w:IEie")) != -1)
+    while (( opt = getopt(argc, argv, ":r:p:s:n:P:c:x:l:w:MIEie")) != -1)
     {
         switch(opt)
         {
@@ -496,6 +497,9 @@ int main(int argc, char *argv[])
                     printf("ERROR: walk file path cannot be empty.\n");
                     exit(-1);
                 }
+                break;
+            case 'M':
+                enable_m5_ops = 1;
                 break;
             case 'I':
                 cli_force_init = 1;
@@ -761,6 +765,8 @@ int main(int argc, char *argv[])
           ((double)chase_array_bytes) / 1024.0 / 1024.0 / 1024.0);
         printf("Pointer-chase config: chase_iters=%d chase_loads_per_iter=%d walk_file='%s'\n",
                chase_iterations, chase_loads_per_iter, walk_file_path);
+        printf("M5 control ops: %s (pass -M to enable)\n",
+               enable_m5_ops ? "enabled" : "disabled");
 
         printf(HLINE);
         printf("The kernel will be executed %d times.\n", run_iterations);
@@ -919,17 +925,20 @@ int main(int argc, char *argv[])
             // debug_log_json("pre-fix", "H6", "stream_omp.c:parallel:reset",
             //                "Issuing m5_dump_reset_stats", "{\"ok\":1}");
             // #endregion
-            m5_dump_reset_stats(0, 0);
-            if (periodic_stats_ticks > 0)
+            if (enable_m5_ops)
             {
-                char data_json[128];
-                snprintf(data_json, sizeof(data_json),
-                         "{\"periodTicks\":%lld}", periodic_stats_ticks);
-                // #region agent log
-                // debug_log_json("pre-fix", "H18", "stream_omp.c:parallel:periodic-stats",
-                //                "Enabled periodic m5_dump_stats", data_json);
-                // #endregion
-                m5_dump_stats(0, (uint64_t)periodic_stats_ticks);
+                m5_dump_reset_stats(0, 0);
+                if (periodic_stats_ticks > 0)
+                {
+                    char data_json[128];
+                    snprintf(data_json, sizeof(data_json),
+                             "{\"periodTicks\":%lld}", periodic_stats_ticks);
+                    // #region agent log
+                    // debug_log_json("pre-fix", "H18", "stream_omp.c:parallel:periodic-stats",
+                    //                "Enabled periodic m5_dump_stats", data_json);
+                    // #endregion
+                    m5_dump_stats(0, (uint64_t)periodic_stats_ticks);
+                }
             }
         }
 #ifdef _OPENMP
@@ -1030,9 +1039,12 @@ int main(int argc, char *argv[])
                     pointer_chase_total_loads);
             fflush(stdout);
             
-            m5_dump_stats(0, 0);
-            // End the simulation immediately after the timed region completes.
-            m5_exit(0);
+            if (enable_m5_ops)
+            {
+                m5_dump_stats(0, 0);
+                // End the simulation immediately after the timed region completes.
+                m5_exit(0);
+            }
         }
     }
 
