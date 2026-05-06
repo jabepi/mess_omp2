@@ -305,6 +305,36 @@ static int load_pointer_walk_file(const char *walk_file_path,
     return 0;
 }
 
+static int save_pointer_walk_file(const char *walk_file_path,
+                                  const struct pointer_chase_line *walk_array,
+                                  uint64_t elems)
+{
+    FILE *output_file;
+    uint64_t i;
+
+    if (walk_file_path == NULL || walk_file_path[0] == '\0')
+        return -1;
+
+    output_file = fopen(walk_file_path, "w");
+    if (output_file == NULL)
+        return -1;
+
+    for (i = 0; i < elems; i++)
+    {
+        if (fprintf(output_file, "%llu\n",
+                    (unsigned long long)walk_array[i].next_offset) < 0)
+        {
+            fclose(output_file);
+            return -1;
+        }
+    }
+
+    if (fclose(output_file) != 0)
+        return -1;
+
+    return 0;
+}
+
 static void init_pointer_walk(const char *walk_file_path,
                               struct pointer_chase_line *walk_array,
                               uint64_t elems)
@@ -318,6 +348,16 @@ static void init_pointer_walk(const char *walk_file_path,
     printf("Pointer walk file '%s' unavailable or invalid; generating deterministic walk in-memory.\n",
            walk_file_path ? walk_file_path : "(null)");
     generate_pointer_walk(walk_array, elems);
+    if (save_pointer_walk_file(walk_file_path, walk_array, elems) == 0)
+    {
+        printf("Pointer walk saved to '%s' for future executions.\n", walk_file_path);
+    }
+    else
+    {
+        printf("WARNING: failed to save pointer walk to '%s' (%s).\n",
+               walk_file_path ? walk_file_path : "(null)",
+               strerror(errno));
+    }
 }
 
 static uint64_t pointer_chase_kernel(struct pointer_chase_line *walk_array,
