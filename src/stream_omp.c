@@ -1021,15 +1021,14 @@ int main(int argc, char *argv[])
                      (unsigned long long)chase_sink);
             debug_log_json("pre-fix", "H5", "stream_omp.c:parallel:roi-end",
                            "Reached ROI end before dump_stats", data_json);
-            if (pointer_chase_total_loads > 0ULL)
-            {
-                double latency_ns = (double)pointer_chase_total_ns /
-                                    (double)pointer_chase_total_loads;
-                printf("mem latency is: (based in time) %.3f ns\n", latency_ns);
-                printf("pointer chase timing: total_ns=%llu total_loads=%llu\n",
-                       (unsigned long long)pointer_chase_total_ns,
-                       pointer_chase_total_loads);
-            }
+            
+            double latency_ns = (double)pointer_chase_total_ns /
+                                (double)pointer_chase_total_loads;
+            printf("mem latency is: (based in time) %.3f ns\n", latency_ns);
+            printf("pointer chase timing: total_ns=%llu total_loads=%llu\n",
+                    (unsigned long long)pointer_chase_total_ns,
+                    pointer_chase_total_loads);
+            
             m5_dump_stats(0, 0);
             // End the simulation immediately after the timed region completes.
             m5_exit(0);
