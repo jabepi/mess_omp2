@@ -404,6 +404,8 @@ void (*STREAM_copy_rw)(double *a_array, double *b_array,
 
 int main(int argc, char *argv[])
 {
+    /* Make benchmark prints visible even when m5_exit terminates quickly. */
+    setvbuf(stdout, NULL, _IONBF, 0);
     
     long long STREAM_ARRAY_SIZE = 0;	
     int BytesPerWord, k, rd_percentage = 50, opt;
@@ -1037,6 +1039,20 @@ int main(int argc, char *argv[])
             printf("pointer chase timing: total_ns=%llu total_loads=%llu\n",
                     (unsigned long long)pointer_chase_total_ns,
                     pointer_chase_total_loads);
+            {
+                char latency_json[256];
+                snprintf(latency_json, sizeof(latency_json),
+                         "{\"latencyNs\":%.6f,\"totalNs\":%llu,\"totalLoads\":%llu,"
+                         "\"runIterations\":%d,\"chaseIterations\":%d,\"chaseLoadsPerIter\":%d}",
+                         latency_ns,
+                         (unsigned long long)pointer_chase_total_ns,
+                         pointer_chase_total_loads,
+                         run_iterations,
+                         chase_iterations,
+                         chase_loads_per_iter);
+                debug_log_json("runtime", "LAT", "stream_omp.c:parallel:latency",
+                               "Pointer-chase latency computed", latency_json);
+            }
             fflush(stdout);
             
             if (enable_m5_ops)
