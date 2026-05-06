@@ -690,8 +690,8 @@ int main(int argc, char *argv[])
                  rd_percentage,
                  (unsigned long long)(uintptr_t)STREAM_copy_rw);
         // #region agent log
-        debug_log_json("pre-fix", "H3", "stream_omp.c:main:kernel-select",
-                       "Selected kernel function", data_json);
+        // debug_log_json("pre-fix", "H3", "stream_omp.c:main:kernel-select",
+        //                "Selected kernel function", data_json);
         // #endregion
     }
 
@@ -802,9 +802,9 @@ int main(int argc, char *argv[])
              */
             skip_init = 0;
             // #region agent log
-            debug_log_json("pre-fix", "H16", "stream_omp.c:setup:auto-force-init",
-                           "Overrode skip init for high read ratio",
-                           "{\"reason\":\"high_read_ratio\",\"threshold\":98}");
+            // debug_log_json("pre-fix", "H16", "stream_omp.c:setup:auto-force-init",
+            //                "Overrode skip init for high read ratio",
+                        //    "{\"reason\":\"high_read_ratio\",\"threshold\":98}");
             // #endregion
         }
         {
@@ -813,8 +813,8 @@ int main(int argc, char *argv[])
                      "{\"skipInit\":%d,\"arrayElements\":%lld}",
                      skip_init, (long long)array_elements);
             // #region agent log
-            debug_log_json("pre-fix", "H9", "stream_omp.c:setup:init-start",
-                           "About to initialize arrays", data_json);
+            // debug_log_json("pre-fix", "H9", "stream_omp.c:setup:init-start",
+            //                "About to initialize arrays", data_json);
             // #endregion
         }
         if (!skip_init)
@@ -830,8 +830,8 @@ int main(int argc, char *argv[])
         }
         {
             // #region agent log
-            debug_log_json("pre-fix", "H9", "stream_omp.c:setup:init-end",
-                           "Finished array initialization", "{\"ok\":1}");
+            // debug_log_json("pre-fix", "H9", "stream_omp.c:setup:init-end",
+            //                "Finished array initialization", "{\"ok\":1}");
             // #endregion
         }
     }
@@ -840,9 +840,9 @@ int main(int argc, char *argv[])
     
     {
         // #region agent log
-        debug_log_json("pre-fix", "H6", "stream_omp.c:main:roi-enter",
-                       "Entering ROI parallel section",
-                       "{\"note\":\"before parallel region\"}");
+        // debug_log_json("pre-fix", "H6", "stream_omp.c:main:roi-enter",
+        //                "Entering ROI parallel section",
+                    //    "{\"note\":\"before parallel region\"}");
         // #endregion
     }
     {
@@ -856,8 +856,8 @@ int main(int argc, char *argv[])
             snprintf(data_json, sizeof(data_json),
                      "{\"skipPreM5Exit\":%d}", skip_pre_roi_exit);
             // #region agent log
-            debug_log_json("pre-fix", "H8", "stream_omp.c:main:pre-m5-exit",
-                           "About to execute pre-ROI m5_exit", data_json);
+            // debug_log_json("pre-fix", "H8", "stream_omp.c:main:pre-m5-exit",
+            //                "About to execute pre-ROI m5_exit", data_json);
             // #endregion
         }
         if (!skip_pre_roi_exit)
@@ -865,15 +865,15 @@ int main(int argc, char *argv[])
             // Trigger Python to switch from ATOMIC CPU to O3 CPU precisely before the ROI
             m5_exit(0);
             // #region agent log
-            debug_log_json("pre-fix", "H8", "stream_omp.c:main:post-m5-exit",
-                           "Returned from pre-ROI m5_exit", "{\"returned\":1}");
+            // debug_log_json("pre-fix", "H8", "stream_omp.c:main:post-m5-exit",
+            //                "Returned from pre-ROI m5_exit", "{\"returned\":1}");
             // #endregion
         }
         else
         {
             // #region agent log
-            debug_log_json("pre-fix", "H8", "stream_omp.c:main:post-m5-exit",
-                           "Skipped pre-ROI m5_exit by env", "{\"returned\":0}");
+            // debug_log_json("pre-fix", "H8", "stream_omp.c:main:post-m5-exit",
+            //                "Skipped pre-ROI m5_exit by env", "{\"returned\":0}");
             // #endregion
         }
     }
@@ -916,8 +916,8 @@ int main(int argc, char *argv[])
 #endif
         {
             // #region agent log
-            debug_log_json("pre-fix", "H6", "stream_omp.c:parallel:reset",
-                           "Issuing m5_dump_reset_stats", "{\"ok\":1}");
+            // debug_log_json("pre-fix", "H6", "stream_omp.c:parallel:reset",
+            //                "Issuing m5_dump_reset_stats", "{\"ok\":1}");
             // #endregion
             m5_dump_reset_stats(0, 0);
             if (periodic_stats_ticks > 0)
@@ -926,8 +926,8 @@ int main(int argc, char *argv[])
                 snprintf(data_json, sizeof(data_json),
                          "{\"periodTicks\":%lld}", periodic_stats_ticks);
                 // #region agent log
-                debug_log_json("pre-fix", "H18", "stream_omp.c:parallel:periodic-stats",
-                               "Enabled periodic m5_dump_stats", data_json);
+                // debug_log_json("pre-fix", "H18", "stream_omp.c:parallel:periodic-stats",
+                //                "Enabled periodic m5_dump_stats", data_json);
                 // #endregion
                 m5_dump_stats(0, (uint64_t)periodic_stats_ticks);
             }
@@ -961,8 +961,8 @@ int main(int argc, char *argv[])
                              (unsigned long long)chase_value,
                              chase_iterations,
                              chase_loads_per_iter);
-                    debug_log_json("pre-fix", "H20", "stream_omp.c:parallel:pointer-chase",
-                                   "Pointer-chase sample", data_json);
+                    // debug_log_json("pre-fix", "H20", "stream_omp.c:parallel:pointer-chase",
+                    //                "Pointer-chase sample", data_json);
                 }
             }
             else if (local_elements > 0)
@@ -982,8 +982,8 @@ int main(int argc, char *argv[])
                              (long long)(t_end - t_start),
                              pause);
                     // #region agent log
-                    debug_log_json("pre-fix", "H4", "stream_omp.c:parallel:kernel-call",
-                                   "Kernel call timing sample", data_json);
+                    // debug_log_json("pre-fix", "H4", "stream_omp.c:parallel:kernel-call",
+                    //                "Kernel call timing sample", data_json);
                     // #endregion
                 }
             }
@@ -993,8 +993,8 @@ int main(int argc, char *argv[])
                 snprintf(data_json, sizeof(data_json),
                          "{\"iter\":%d,\"runIterations\":%d}", iter, run_iterations);
                 // #region agent log
-                debug_log_json("pre-fix", "H11", "stream_omp.c:parallel:iter-end",
-                               "Finished kernel iteration", data_json);
+                // debug_log_json("pre-fix", "H11", "stream_omp.c:parallel:iter-end",
+                //                "Finished kernel iteration", data_json);
                 // #endregion
             }
         }
@@ -1007,8 +1007,8 @@ int main(int argc, char *argv[])
                      "{\"threadId\":%d,\"localElements\":%lld,\"runIterations\":%d}",
                      thread_id, (long long)local_elements, run_iterations);
             // #region agent log
-            debug_log_json("pre-fix", "H14", "stream_omp.c:parallel:before-final-barrier",
-                           "Thread reached final barrier point", data_json);
+            // debug_log_json("pre-fix", "H14", "stream_omp.c:parallel:before-final-barrier",
+            //                "Thread reached final barrier point", data_json);
             // #endregion
         }
         #pragma omp barrier
@@ -1019,8 +1019,8 @@ int main(int argc, char *argv[])
             snprintf(data_json, sizeof(data_json),
                      "{\"chaseSink\":%llu}",
                      (unsigned long long)chase_sink);
-            debug_log_json("pre-fix", "H5", "stream_omp.c:parallel:roi-end",
-                           "Reached ROI end before dump_stats", data_json);
+            // debug_log_json("pre-fix", "H5", "stream_omp.c:parallel:roi-end",
+            //                "Reached ROI end before dump_stats", data_json);
             
             double latency_ns = (double)pointer_chase_total_ns /
                                 (double)pointer_chase_total_loads;
