@@ -199,6 +199,7 @@ void m5_dump_stats(uint64_t delay, uint64_t period) {
 
 #define STREAM_KERNEL_GRAIN_ELEMS 400
 #define POINTER_CHASE_CACHE_LINE 128
+#define POINTER_CHASE_DEFAULT_BYTES (100ULL * 1024ULL * 1024ULL)
 
 // Some compilers require an extra keyword to recognize the "restrict" qualifier.
 double * __restrict a, * __restrict b;
@@ -718,7 +719,7 @@ int main(int argc, char *argv[])
     }
 
     if (chase_array_elems == 0)
-        chase_array_elems = STREAM_ARRAY_SIZE;
+        chase_array_elems = (long long)(POINTER_CHASE_DEFAULT_BYTES / POINTER_CHASE_CACHE_LINE);
     chase_array_bytes = (ssize_t)chase_array_elems * (ssize_t)sizeof(struct pointer_chase_line);
     k = posix_memalign((void **)&chase_array, POINTER_CHASE_CACHE_LINE, (size_t)chase_array_bytes);
     if (k != 0)
