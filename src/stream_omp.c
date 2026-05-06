@@ -769,6 +769,10 @@ int main(int argc, char *argv[])
                chase_iterations, chase_loads_per_iter, walk_file_path);
         printf("M5 control ops: %s (pass -M to enable)\n",
                enable_m5_ops ? "enabled" : "disabled");
+        if (enable_m5_ops)
+        {
+            printf("M5 mode note: start-of-ROI m5_dump_* hooks are disabled; only end-of-ROI m5 hooks are used.\n");
+        }
 
         printf(HLINE);
         printf("The kernel will be executed %d times.\n", run_iterations);
@@ -926,21 +930,10 @@ int main(int argc, char *argv[])
             // debug_log_json("pre-fix", "H6", "stream_omp.c:parallel:reset",
             //                "Issuing m5_dump_reset_stats", "{\"ok\":1}");
             // #endregion
-            if (enable_m5_ops)
-            {
-                m5_dump_reset_stats(0, 0);
-                if (periodic_stats_ticks > 0)
-                {
-                    char data_json[128];
-                    snprintf(data_json, sizeof(data_json),
-                             "{\"periodTicks\":%lld}", periodic_stats_ticks);
-                    // #region agent log
-                    // debug_log_json("pre-fix", "H18", "stream_omp.c:parallel:periodic-stats",
-                    //                "Enabled periodic m5_dump_stats", data_json);
-                    // #endregion
-                    m5_dump_stats(0, (uint64_t)periodic_stats_ticks);
-                }
-            }
+            /* Some gem5 wrappers may terminate on early m5 ops. Keep m5 control
+             * at ROI end only, so pointer-chase latency always gets computed.
+             */
+            (void)periodic_stats_ticks;
         }
 #ifdef _OPENMP
         #pragma omp barrier
