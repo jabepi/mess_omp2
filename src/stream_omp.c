@@ -673,19 +673,7 @@ int main(int argc, char *argv[])
             STREAM_copy_rw = &STREAM_copy_50;
             break;
     }
-    {
-        char data_json[160];
-        snprintf(data_json, sizeof(data_json),
-                 "{\"rdPercentage\":%d,\"kernelPtr\":%llu}",
-                 rd_percentage,
-                 (unsigned long long)(uintptr_t)STREAM_copy_rw);
-        // #region agent log
-        // debug_log_json("pre-fix", "H3", "stream_omp.c:main:kernel-select",
-        //                "Selected kernel function", data_json);
-        // #endregion
-    }
-
-
+    
     /* --- distribute requested storage across MPI ranks --- */
     array_elements = STREAM_ARRAY_SIZE;              // don't worry about rounding vs truncation
     if (array_elements % STREAM_KERNEL_GRAIN_ELEMS != 0)
@@ -863,21 +851,8 @@ int main(int argc, char *argv[])
             
             double latency_ns = (double)pointer_chase_total_ns /
                                 (double)pointer_chase_total_loads;
-            printf("mem latency is: (based in time) %.3f ns\n", latency_ns);
-            printf("pointer chase timing: total_ns=%llu total_loads=%llu\n",
-                    (unsigned long long)pointer_chase_total_ns,
-                    pointer_chase_total_loads);
             {
                 char latency_json[256];
-                snprintf(latency_json, sizeof(latency_json),
-                         "{\"latencyNs\":%.6f,\"totalNs\":%llu,\"totalLoads\":%llu,"
-                         "\"runIterations\":%d,\"chaseIterations\":%d,\"chaseLoadsPerIter\":%d}",
-                         latency_ns,
-                         (unsigned long long)pointer_chase_total_ns,
-                         pointer_chase_total_loads,
-                         run_iterations,
-                         chase_iterations,
-                         chase_loads_per_iter);
                 debug_log_json("runtime", "LAT", "stream_omp.c:parallel:latency",
                                "Pointer-chase latency computed", latency_json);
             }
