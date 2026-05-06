@@ -43,6 +43,7 @@
 # include <sys/time.h>
 # include <stdint.h>
 # include <errno.h>
+# include <time.h>
 # include <omp.h>
 
 #define DEBUG_LOG_PATH "/home/gem5/mess_omp2/debug-2ac992.log"
@@ -53,6 +54,13 @@ static long long debug_now_ms(void)
     struct timeval tv;
     gettimeofday(&tv, NULL);
     return ((long long)tv.tv_sec * 1000LL) + ((long long)tv.tv_usec / 1000LL);
+}
+
+static uint64_t now_ns(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ((uint64_t)ts.tv_sec * 1000000000ULL) + (uint64_t)ts.tv_nsec;
 }
 
 static void debug_log_json(const char *run_id,
@@ -413,6 +421,8 @@ int main(int argc, char *argv[])
     int cli_force_pre_m5_exit = 0;
     struct pointer_chase_line *chase_array = NULL;
     volatile uint64_t chase_sink = 0;
+    uint64_t pointer_chase_total_ns = 0;
+    unsigned long long pointer_chase_total_loads = 0;
 
     // Command line parsing
     while (( opt = getopt(argc, argv, ":r:p:s:n:P:c:x:l:w:IEie")) != -1)
@@ -929,11 +939,16 @@ int main(int argc, char *argv[])
         {
             if (thread_id == 0)
             {
+                uint64_t chase_begin_ns = now_ns();
                 uint64_t chase_value = pointer_chase_kernel(chase_array,
                                                             (uint64_t)chase_array_elems,
                                                             chase_iterations,
                                                             chase_loads_per_iter);
+                uint64_t chase_end_ns = now_ns();
                 chase_sink ^= chase_value;
+                pointer_chase_total_ns += (chase_end_ns - chase_begin_ns);
+                pointer_chase_total_loads += (unsigned long long)chase_iterations *
+                                             (unsigned long long)chase_loads_per_iter;
                 if (iter == 0)
                 {
                     char data_json[224];
@@ -1005,6 +1020,15 @@ int main(int argc, char *argv[])
                      (unsigned long long)chase_sink);
             debug_log_json("pre-fix", "H5", "stream_omp.c:parallel:roi-end",
                            "Reached ROI end before dump_stats", data_json);
+            if (pointer_chase_total_loads > 0ULL)
+            {
+                double latency_ns = (double)pointer_chase_total_ns /
+                                    (double)pointer_chase_total_loads;
+                printf("mem latency is: (based in time) %.3f ns\n", latency_ns);
+                printf("pointer chase timing: total_ns=%llu total_loads=%llu\n",
+                       (unsigned long long)pointer_chase_total_ns,
+                       pointer_chase_total_loads);
+            }
             m5_dump_stats(0, 0);
             // End the simulation immediately after the timed region completes.
             m5_exit(0);
