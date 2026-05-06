@@ -848,12 +848,17 @@ int main(int argc, char *argv[])
         thread_count = omp_get_num_threads();
 #endif
 
-        chunk = total_blocks / thread_count;
-        remainder = total_blocks % thread_count;
-        local_blocks = chunk + (thread_id < remainder ? 1 : 0);
-        local_start = ((thread_id * chunk) + MIN(thread_id, remainder)) *
-                      STREAM_KERNEL_GRAIN_ELEMS;
-        local_elements = local_blocks * STREAM_KERNEL_GRAIN_ELEMS;
+        stream_worker_count = thread_count > 1 ? (thread_count - 1) : 0;
+        if (stream_worker_count > 0 && thread_id > 0)
+        {
+            stream_worker_idx = thread_id - 1;
+            chunk = total_blocks / stream_worker_count;
+            remainder = total_blocks % stream_worker_count;
+            local_blocks = chunk + (stream_worker_idx < remainder ? 1 : 0);
+            local_start = ((stream_worker_idx * chunk) + MIN(stream_worker_idx, remainder)) *
+                          STREAM_KERNEL_GRAIN_ELEMS;
+            local_elements = local_blocks * STREAM_KERNEL_GRAIN_ELEMS;
+        }
 #ifdef _OPENMP
         #pragma omp barrier
         #pragma omp master
@@ -882,10 +887,33 @@ int main(int argc, char *argv[])
 
         for (iter = 0; iter < run_iterations; iter++)
         {
-            if (local_elements > 0)
+            if (thread_id == 0)
             {
+                uint64_t chase_value = pointer_chase_kernel(chase_array,
+                                                            (uint64_t)chase_array_elems,
+                                                            chase_iterations,
+                                                            chase_loads_per_iter);
+                chase_sink ^= chase_value;
+                if (iter == 0)
+                {
+                    char data_json[224];
+                    snprintf(data_json, sizeof(data_json),
+                             "{\"threadId\":%d,\"iter\":%d,\"chaseValue\":%llu,"
+                             "\"chaseIterations\":%d,\"chaseLoadsPerIter\":%d}",
+                             thread_id,
+                             iter,
+                             (unsigned long long)chase_value,
+                             chase_iterations,
+                             chase_loads_per_iter);
+                    debug_log_json("pre-fix", "H20", "stream_omp.c:parallel:pointer-chase",
+                                   "Pointer-chase sample", data_json);
+                }
+            }
+            else if (local_elements > 0)
+            {
+                long long t_start = debug_now_ms();
                 STREAM_copy_rw(a + local_start, b + local_start, &local_elements, &pause);
-                if (iter == 0 && thread_id < 2)
+                if (iter == 0 && stream_worker_idx == 0)
                 {
                     long long t_end = debug_now_ms();
                     char data_json[256];
@@ -931,6 +959,12 @@ int main(int argc, char *argv[])
         #pragma omp master
 #endif
         {
+            char data_json[128];
+            snprintf(data_json, sizeof(data_json),
+                     "{\"chaseSink\":%llu}",
+                     (unsigned long long)chase_sink);
+            debug_log_json("pre-fix", "H5", "stream_omp.c:parallel:roi-end",
+                           "Reached ROI end before dump_stats", data_json);
             m5_dump_stats(0, 0);
             // End the simulation immediately after the timed region completes.
             m5_exit(0);
